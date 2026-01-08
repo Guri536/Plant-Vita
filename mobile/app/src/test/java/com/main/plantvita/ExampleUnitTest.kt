@@ -1,4 +1,4 @@
-package com.example.plantvita
+package com.main.plantvita
 
 import org.junit.Test
 
