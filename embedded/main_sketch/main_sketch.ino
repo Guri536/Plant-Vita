@@ -9,7 +9,7 @@ const int RED_LED_PIN = 25;
 const int PIN_LED_ON = HIGH;
 
 // TIMERS
-const int SETUP_TIMEOUT = 1200;
+const int SETUP_TIMEOUT = 120000; // 2 min timer for hotspot timeout 
 const int WAITING_FOR_HOTSPOT_CONNECTION = 800;
 const int WAITING_FOR_WIFI = 500;
 
@@ -27,6 +27,8 @@ void shutDownSystem() {
   Serial.println("Shutting down");
   digitalWrite(GREEN_LED_PIN, !PIN_LED_ON);
   digitalWrite(RED_LED_PIN, PIN_LED_ON);
+  server.stop();            
+  WiFi.softAPdisconnect(true);
   while (true) { delay(10000); }
 }
 
@@ -96,6 +98,7 @@ void getWifiCredsFromAP() {
     int stationCount = WiFi.softAPgetStationNum();
 
     if (stationCount > 0) {
+      Serial.println("Device connected to Access Point");
       digitalWrite(GREEN_LED_PIN, PIN_LED_ON);
       lastBlinkTime = millis();
     } else if (millis() - lastBlinkTime > WAITING_FOR_HOTSPOT_CONNECTION) {
