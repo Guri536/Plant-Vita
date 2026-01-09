@@ -12,6 +12,7 @@ const int PIN_LED_ON = HIGH;
 const int SETUP_TIMEOUT = 120000; // 2 min timer for hotspot timeout 
 const int WAITING_FOR_HOTSPOT_CONNECTION = 800;
 const int WAITING_FOR_WIFI = 500;
+const int WIFI_CONNECT_TIMEOUT = 20000;
 
 // UUIDs for services
 #define SERVICE_UUID "8a26dfa4-f405-4de1-9ef3-ee8866b0d25e"
@@ -58,10 +59,10 @@ void saveWifiCreds() {
     pref.putString("pass", pass);
     pref.end();
 
-    server.send(200, "text/plain", "Credentials Saved. Restarting...");
+    server.send(200, "application/json", "{\"status\":\"saved\"}");
     gotWifiCreds = true;
   } else {
-    server.send(400, "text/plain", "Missing ssid or pass");
+    server.send(200, "application/json", "{\"status\":\"error\"}");
   }
 }
 
@@ -73,7 +74,7 @@ void getWifiCredsFromAP() {
   Serial.println("Starting Access point");
   WiFi.mode(WIFI_AP_STA);
 
-  WiFi.softAP("Plant-Vita-Setup", "", 1, 0, 1);
+  WiFi.softAP("Plant-Vita-Setup");
   Serial.println("AP started; IP: " + WiFi.softAPIP().toString());
 
   server.on("/", HTTP_GET, handleRoot);
@@ -98,7 +99,6 @@ void getWifiCredsFromAP() {
     int stationCount = WiFi.softAPgetStationNum();
 
     if (stationCount > 0) {
-      Serial.println("Device connected to Access Point");
       digitalWrite(GREEN_LED_PIN, PIN_LED_ON);
       lastBlinkTime = millis();
     } else if (millis() - lastBlinkTime > WAITING_FOR_HOTSPOT_CONNECTION) {
@@ -110,6 +110,22 @@ void getWifiCredsFromAP() {
   }
 
   shutDownSystem();
+}
+
+void handleLoginFailure(String reason) {
+  Serial.println("\nWiFi Connection Failed! Reason: " + reason);
+  Serial.println("Erasing bad credentials and restarting...");
+
+  pref.begin("wifi-creds", false);
+  pref.clear(); 
+  pref.end();
+
+  for(int i=0; i<10; i++){
+      digitalWrite(RED_LED_PIN, PIN_LED_ON); delay(100);
+      digitalWrite(RED_LED_PIN, !PIN_LED_ON); delay(100);
+  }
+
+  ESP.restart();
 }
 
 void setup() {
@@ -136,15 +152,28 @@ void setup() {
 
     bool ledState = false;
     unsigned long lastBlinkTime = 0;
+    unsigned long startAttemptTime = millis();
 
     while (WiFi.status() != WL_CONNECTED) {
-      Serial.print(".");
+      if (WiFi.status() == WL_CONNECT_FAILED) {
+          handleLoginFailure("Wrong Password or Connection Refused");
+      } 
+      else if (WiFi.status() == WL_NO_SSID_AVAIL) {
+          handleLoginFailure("SSID Not Found (Network unreachable)");
+      }
+
+      if (millis() - startAttemptTime > WIFI_CONNECT_TIMEOUT) {
+          handleLoginFailure("Connection Timed Out");
+      }
+
       if (millis() - lastBlinkTime > WAITING_FOR_WIFI) {
+        Serial.print(".");
         lastBlinkTime = millis();
         ledState = !ledState;
         digitalWrite(GREEN_LED_PIN, ledState ? PIN_LED_ON : !PIN_LED_ON);
       }
     }
+
     Serial.println("\nWifi Connected!");
     Serial.print("IP Address: ");
     Serial.println(WiFi.localIP());
