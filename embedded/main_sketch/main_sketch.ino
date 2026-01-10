@@ -130,6 +130,9 @@ void handleLoginFailure(String reason) {
 
 void setup() {
   Serial.begin(115200);
+  Serial2.begin(115200, SERIAL_8N1, 35, -1); 
+  Serial.println("Base listening on Pin 35...");
+
   pinMode(GREEN_LED_PIN, OUTPUT);
   pinMode(RED_LED_PIN, OUTPUT);
 
@@ -183,4 +186,11 @@ void setup() {
 }
 
 void loop() {
+  if (Serial2.available()) {
+    char c = Serial2.read();
+    
+    if ((c >= 32 && c <= 126) || c == '\n' || c == '\r') {
+      Serial.write(c);
+    }
+  }
 }

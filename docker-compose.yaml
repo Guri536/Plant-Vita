@@ -1,0 +1,31 @@
+version: '3.8'
+
+services:
+  db: 
+    image: postgress:15-alpine
+    container_name: plantvita_db
+    restart : always
+    environment:
+      - POSTGRES_USER: ${DB_USER}
+      - POSTGRES_PASSWORD: ${DB_PASS}
+      - POSTGRES_DB: ${DB_NAME}
+    ports:
+      - ${DB_PORT}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+  
+  web:
+    build: ./backend  
+    command: "uvicorn main:app --host 0.0.0.0 --port 8000 --reload"
+    volumes:
+      - ./backend:/app
+    ports:
+      - ${SERVER_PORT}
+    environment:
+      - DATEBASE_URL=${DB_URL}
+      - GEMINI_KEY=${GEMINI_KEY}  
+    depends_on:
+      - db
+
+volumes:
+  postgres_data:
