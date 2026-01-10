@@ -18,8 +18,8 @@ class Plant(SQLModel, table=True):
     moisture_threshold_min: int    
     moisture_threshold_max: int
     owner: User = Relationship(back_populates="plant")
-    sensor_readings: List[SensorReading] = Relationship(back_populates="plant")
-    images: List[Image] = Relationship(back_populates="plant")
+    sensor_readings: List["SensorReading"] = Relationship(back_populates="plant")
+    images: List["Image"] = Relationship(back_populates="plant")
     
 class SensorReading(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
@@ -36,7 +36,7 @@ class SensorReading(SQLModel, table=True):
     plant: Plant = Relationship(back_populates="sensor_readings")
     
 class Image(SQLModel, table=True):
-    id: Optional[int] = Field(default=None, primaruy_key=True)
+    id: Optional[int] = Field(default=None, primary_key=True)
     plant_id: int = Field(foreign_key="plant.id")
     
     timestamp: datetime = Field(default_factory=datetime.utcnow)

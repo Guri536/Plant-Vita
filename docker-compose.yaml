@@ -2,15 +2,15 @@ version: '3.8'
 
 services:
   db: 
-    image: postgress:15-alpine
+    image: postgres:15-alpine
     container_name: plantvita_db
     restart : always
     environment:
-      - POSTGRES_USER: ${DB_USER}
-      - POSTGRES_PASSWORD: ${DB_PASS}
-      - POSTGRES_DB: ${DB_NAME}
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASS}
+      POSTGRES_DB: ${DB_NAME}
     ports:
-      - ${DB_PORT}
+      - "${DB_PORT}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
   
@@ -20,10 +20,10 @@ services:
     volumes:
       - ./backend:/app
     ports:
-      - ${SERVER_PORT}
+      - "${SERVER_PORT}:8000"
     environment:
-      - DATEBASE_URL=${DB_URL}
-      - GEMINI_KEY=${GEMINI_KEY}  
+      DATABASE_URL: ${DB_URL}
+      GEMINI_KEY: ${GEMINI_KEY}  
     depends_on:
       - db
 

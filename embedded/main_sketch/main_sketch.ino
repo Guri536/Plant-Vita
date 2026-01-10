@@ -6,13 +6,15 @@
 // PIN LAYOUTS
 const int GREEN_LED_PIN = 26;
 const int RED_LED_PIN = 25;
+const int RESET_BUTTON_PIN = 27;
 const int PIN_LED_ON = HIGH;
 
 // TIMERS
-const int SETUP_TIMEOUT = 120000; // 2 min timer for hotspot timeout 
+const int SETUP_TIMEOUT = 120000;  // 2 min timer for hotspot timeout
 const int WAITING_FOR_HOTSPOT_CONNECTION = 800;
 const int WAITING_FOR_WIFI = 500;
 const int WIFI_CONNECT_TIMEOUT = 20000;
+const int BUTTON_LONG_PRESS_MS = 5000;
 
 // UUIDs for services
 #define SERVICE_UUID "8a26dfa4-f405-4de1-9ef3-ee8866b0d25e"
@@ -28,7 +30,7 @@ void shutDownSystem() {
   Serial.println("Shutting down");
   digitalWrite(GREEN_LED_PIN, !PIN_LED_ON);
   digitalWrite(RED_LED_PIN, PIN_LED_ON);
-  server.stop();            
+  server.stop();
   WiFi.softAPdisconnect(true);
   while (true) { delay(10000); }
 }
@@ -117,24 +119,68 @@ void handleLoginFailure(String reason) {
   Serial.println("Erasing bad credentials and restarting...");
 
   pref.begin("wifi-creds", false);
-  pref.clear(); 
+  pref.clear();
   pref.end();
 
-  for(int i=0; i<10; i++){
-      digitalWrite(RED_LED_PIN, PIN_LED_ON); delay(100);
-      digitalWrite(RED_LED_PIN, !PIN_LED_ON); delay(100);
+  for (int i = 0; i < 10; i++) {
+    digitalWrite(RED_LED_PIN, PIN_LED_ON);
+    delay(100);
+    digitalWrite(RED_LED_PIN, !PIN_LED_ON);
+    delay(100);
   }
 
   ESP.restart();
 }
 
+void checkResetButton() {
+  if (digitalRead(RESET_BUTTON_PIN) == LOW) {
+    unsigned long startTime = millis();
+    bool longPress = false;
+
+    while (digitalRead(RESET_BUTTON_PIN) == LOW) {
+      if (millis() - startTime > BUTTON_LONG_PRESS_MS) {
+        Serial.println("\nFactory reseting the device");
+
+        digitalWrite(RED_LED_PIN, PIN_LED_ON);
+        digitalWrite(GREEN_LED_PIN, !PIN_LED_ON);
+
+        pref.begin("wifi-creds", false);
+        pref.clear();
+        pref.end();
+
+        for (int i = 0; i < 5; i++) {
+          digitalWrite(RED_LED_PIN, !PIN_LED_ON);
+          delay(100);
+          digitalWrite(RED_LED_PIN, PIN_LED_ON);
+          delay(100);
+        }
+
+        Serial.println("Restarting system...");
+        ESP.restart();
+        longPress = true;
+      }
+      delay(10);
+    }
+
+    unsigned long pressedDuration = millis() - startTime;
+
+    if (pressedDuration > 50 && !longPress) {
+      Serial.println("\nRebooting Triggered");
+      delay(100);
+      ESP.restart();
+    }
+  }
+}
+
+
 void setup() {
   Serial.begin(115200);
-  Serial2.begin(115200, SERIAL_8N1, 35, -1); 
+  Serial2.begin(115200, SERIAL_8N1, 35, -1);
   Serial.println("Base listening on Pin 35...");
 
   pinMode(GREEN_LED_PIN, OUTPUT);
   pinMode(RED_LED_PIN, OUTPUT);
+  pinMode(RESET_BUTTON_PIN, INPUT_PULLUP);
 
   digitalWrite(GREEN_LED_PIN, LOW);
   digitalWrite(RED_LED_PIN, LOW);
@@ -158,15 +204,16 @@ void setup() {
     unsigned long startAttemptTime = millis();
 
     while (WiFi.status() != WL_CONNECTED) {
+      checkResetButton();
+
       if (WiFi.status() == WL_CONNECT_FAILED) {
-          handleLoginFailure("Wrong Password or Connection Refused");
-      } 
-      else if (WiFi.status() == WL_NO_SSID_AVAIL) {
-          handleLoginFailure("SSID Not Found (Network unreachable)");
+        handleLoginFailure("Wrong Password or Connection Refused");
+      } else if (WiFi.status() == WL_NO_SSID_AVAIL) {
+        digitalWrite(RED_LED_PIN, PIN_LED_ON);
       }
 
       if (millis() - startAttemptTime > WIFI_CONNECT_TIMEOUT) {
-          handleLoginFailure("Connection Timed Out");
+        handleLoginFailure("Connection Timed Out");
       }
 
       if (millis() - lastBlinkTime > WAITING_FOR_WIFI) {
@@ -177,7 +224,9 @@ void setup() {
       }
     }
 
-    Serial.println("\nWifi Connected!");
+    digitalWrite(RED_LED_PIN, !PIN_LED_ON);
+
+      Serial.println("\nWifi Connected!");
     Serial.print("IP Address: ");
     Serial.println(WiFi.localIP());
 
@@ -186,9 +235,11 @@ void setup() {
 }
 
 void loop() {
+  checkResetButton();
+
   if (Serial2.available()) {
     char c = Serial2.read();
-    
+
     if ((c >= 32 && c <= 126) || c == '\n' || c == '\r') {
       Serial.write(c);
     }
