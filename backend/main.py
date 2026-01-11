@@ -6,6 +6,7 @@ import os
 from models import User, Plant, SensorReading
 from schemas import PlantCreate, PlantRead, SensorReadingCreate, SensorReadingRead
 from typing import AsyncGenerator
+from contextlib import asynccontextmanager
 
 DATABASE_URL = os.environ.get("DATABASE_URL")
 engine = create_async_engine(DATABASE_URL, echo = True)
@@ -16,10 +17,11 @@ async def get_session() -> AsyncGenerator[AsyncSession, None]:
     async with async_session() as session:
         yield session
 
-@app.on_event("startup")
-async def on_startup():
+@asynccontextmanager
+async def lifespan(app: FastAPI):
     async with engine.begin() as conn:
         await conn.run_sync(SQLModel.metadata.create_all)
+    yield  
 
 @app.get("/")
 def read_root():
@@ -32,6 +34,7 @@ def read_root():
 async def create_plant(plant: PlantCreate, session: AsyncSession = Depends(get_session)):
     user = await session.get(User, plant.owner_id)
     
+    # Temp for now until user creation 
     if not user:
         dummy_user = User(
             id = plant.owner_id,
@@ -42,8 +45,7 @@ async def create_plant(plant: PlantCreate, session: AsyncSession = Depends(get_s
         await session.commit()
         await session.refresh(dummy_user)
         
-        
-    db_plant = Plant.from_orm(plant)
+    db_plant = Plant.model_validate(plant)
     db_plant.sensor_readings = []
     session.add(db_plant)
     await session.commit()
@@ -78,7 +80,7 @@ async def create_sensor_reading(
     if not plant: 
         raise HTTPException(status_code = 404, detail = "Device/Plant not registered")
     
-    db_reading = SensorReading.from_orm(reading)
+    db_reading = SensorReading.model_validate(reading)
     db_reading.plant_id = plant.id
     
     session.add(db_reading)

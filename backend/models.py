@@ -18,8 +18,14 @@ class Plant(SQLModel, table=True):
     moisture_threshold_min: int    
     moisture_threshold_max: int
     owner: User = Relationship(back_populates="plants")
-    sensor_readings: List["SensorReading"] = Relationship(back_populates="plant")
-    images: List["Image"] = Relationship(back_populates="plant")
+    sensor_readings: List["SensorReading"] = Relationship(
+        back_populates="plant",
+        sa_relationship_kwargs={"lazy": "selectin"}
+        )
+    images: List["Image"] = Relationship(
+        back_populates="plant",
+        sa_relationship_kwargs={"lazy": "selectin"}
+    )
     
 class SensorReading(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
