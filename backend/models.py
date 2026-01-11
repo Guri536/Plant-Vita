@@ -17,7 +17,7 @@ class Plant(SQLModel, table=True):
     species: str
     moisture_threshold_min: int    
     moisture_threshold_max: int
-    owner: User = Relationship(back_populates="plant")
+    owner: User = Relationship(back_populates="plants")
     sensor_readings: List["SensorReading"] = Relationship(back_populates="plant")
     images: List["Image"] = Relationship(back_populates="plant")
     
@@ -31,7 +31,7 @@ class SensorReading(SQLModel, table=True):
     humidity: float
     pressure: float
     light_lux: float
-    air_quality: float
+    air_quality: Optional[float] = None
     
     plant: Plant = Relationship(back_populates="sensor_readings")
     
