@@ -1,5 +1,5 @@
 # Use a Node.js base image
-FROM node:20-alpine
+FROM node:20.11-alpine
 
 # Set the working directory inside the container
 WORKDIR /app
@@ -17,4 +17,4 @@ COPY . .
 EXPOSE 5173
 
 # The command is handled by docker-compose, but we include a default here
-CMD ["npm", "run", "dev", "--", "--host"]
+CMD ["npm", "run", "dev", "--", "-H", "0.0.0.0"]

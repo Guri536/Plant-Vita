@@ -32,15 +32,15 @@ services:
     build: ./frontend
     container_name: plantvita_frontend
     restart: always
-    command: npm run dev -- --host
+    command: npm run dev -- -H 0.0.0.0 -p 3000
     volumes:
       - ./frontend:/app
       - /app/node_modules
     working_dir: /app
     ports:
-      - "${FRONTEND_PORT}:5173"
+      - "${FRONTEND_PORT}:3000"
     environment:
-      VITE_API_URL: ${API_URL}
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
     depends_on:
       - web
 
