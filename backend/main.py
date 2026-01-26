@@ -24,11 +24,6 @@ async def lifespan(app: FastAPI):
     
 app = FastAPI(title="Plant-Vita Backend", lifespan=lifespan)
 
-async def get_session() -> AsyncGenerator[AsyncSession, None]:
-    async_session = sessionmaker(engine, class_= AsyncSession, expire_on_commit = False)
-    async with async_session() as session:
-        yield session
-
 @app.get("/")
 def read_root():
     return {

@@ -2,11 +2,11 @@
   "name": "PlantVita",
   "dockerComposeFile": "../docker-compose.yaml",
   "service": "web",
-  "workspaceFolder": "/workspace",
+  "workspaceFolder": "/app",
   "customizations": {
     "vscode": {
       "settings": {
-        "python.analysis.extraPaths": ["./backend"],
+        "python.analysis.extraPaths": ["/app/backend"],
         "python.defaultInterpreterPath": "/usr/local/bin/python"
       },
       "extensions": ["ms-python.python", "ms-python.vscode-pylance"]

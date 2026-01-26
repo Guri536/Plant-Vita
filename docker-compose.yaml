@@ -18,8 +18,8 @@ services:
     build: ./backend  
     command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
     volumes:
-      - .:/workspace
-    working_dir: /workspace/backend
+      - .:/app
+    working_dir: /app/backend
     ports:
       - "${SERVER_PORT}:8000"
     environment:
