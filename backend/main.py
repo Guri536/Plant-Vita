@@ -8,7 +8,7 @@ from schemas import PlantCreate, PlantRead, SensorReadingCreate, SensorReadingRe
 from typing import AsyncGenerator
 from contextlib import asynccontextmanager
 
-DATABASE_URL = os.environ.get("DATABASE_URL")
+DATAB2ASE_URL = os.environ.get("DATABASE_URL")
 engine = create_async_engine(DATABASE_URL, echo = True)
 
 async def get_session() -> AsyncGenerator[AsyncSession, None]:
@@ -23,6 +23,11 @@ async def lifespan(app: FastAPI):
     yield  
     
 app = FastAPI(title="Plant-Vita Backend", lifespan=lifespan)
+
+async def get_session() -> AsyncGenerator[AsyncSession, None]:
+    async_session = sessionmaker(engine, class_= AsyncSession, expire_on_commit = False)
+    async with async_session() as session:
+        yield session
 
 @app.get("/")
 def read_root():
