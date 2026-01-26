@@ -10,7 +10,6 @@ from contextlib import asynccontextmanager
 
 DATABASE_URL = os.environ.get("DATABASE_URL")
 engine = create_async_engine(DATABASE_URL, echo = True)
-app = FastAPI(title="Plant-Vita Backend")
 
 async def get_session() -> AsyncGenerator[AsyncSession, None]:
     async_session = sessionmaker(engine, class_= AsyncSession, expire_on_commit = False)
@@ -22,6 +21,8 @@ async def lifespan(app: FastAPI):
     async with engine.begin() as conn:
         await conn.run_sync(SQLModel.metadata.create_all)
     yield  
+    
+app = FastAPI(title="Plant-Vita Backend", lifespan=lifespan)
 
 @app.get("/")
 def read_root():
@@ -74,14 +75,16 @@ async def create_sensor_reading(
     session: AsyncSession = Depends(get_session)
 ):
     statement = select(Plant).where(Plant.mac_address == mac_address)
-    results = await session.exec(statement)
-    plant = results.first()
+    results = await session.execute(statement)
+    plant = results.scalars().first()
     
     if not plant: 
         raise HTTPException(status_code = 404, detail = "Device/Plant not registered")
     
-    db_reading = SensorReading.model_validate(reading)
-    db_reading.plant_id = plant.id
+    db_reading = SensorReading(
+        **reading.model_dump(), 
+        plant_id=plant.id
+    )
     
     session.add(db_reading)
     await session.commit()

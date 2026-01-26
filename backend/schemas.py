@@ -4,9 +4,8 @@ from datetime import datetime
 
 class SensorReadingCreate(BaseModel):
     soil_moisture: float
-    temprature: float
+    temperature: float
     humidity: float
-    pressure: float
     light_lux: float
     air_quality: Optional[float] = None
     

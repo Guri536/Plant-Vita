@@ -7,17 +7,27 @@
 // Globals
 Preferences pref;
 WebServer server(80);
+DHT dht22(DHT_PIN, DHT_TYPE);
+BH1750 bh1750;
 bool gotWifiCreds = false;
+
+
+// Timers
+unsigned long lastSensorRead = 0;
 
 void setup() {
   Serial.begin(115200);
-  Serial2.begin(115200, SERIAL_8N1, 35, -1);
+  Serial2.begin(115200, SERIAL_8N1, CAM_READ_PIN, -1);
   Serial.println("Base listening on Pin 35...");
 
   // PINS
   pinMode(GREEN_LED_PIN, OUTPUT);
   pinMode(RED_LED_PIN, OUTPUT);
   pinMode(RESET_BUTTON_PIN, INPUT_PULLUP);
+  pinMode(DHT_PIN, INPUT);
+  pinMode(MQ135_PIN, INPUT);
+  dht22.begin();
+  setupSensors();
 
   digitalWrite(GREEN_LED_PIN, LOW);
   digitalWrite(RED_LED_PIN, LOW);
@@ -91,10 +101,53 @@ void setup() {
 void loop() {
   checkResetButton();
 
-  if (Serial2.available()) {
-    char c = Serial2.read();
-    if ((c >= 32 && c <= 126) || c == '\n' || c == '\r') {
-      Serial.write(c);
+  // if (Serial2.available()) {
+  //   char c = Serial2.read();
+  //   if ((c >= 32 && c <= 126) || c == '\n' || c == '\r') {
+  //     Serial.write(c);
+  //   }
+  // }
+
+  if (millis() - lastSensorRead > SENSOR_READ_TIME) {
+    float humi = dht22.readHumidity();
+    float tempC = dht22.readTemperature();
+    float lux = getLightLevel();
+    int airQuality = getAirQuality();
+    float ppm = getPPM();
+    int moistureSurface = getSoilMoisture(SOIL_SURFACE_PIN);
+    int moistureRoot    = getSoilMoisture(SOIL_ROOT_PIN);
+
+    if (isnan(tempC) || isnan(humi)) {
+      Serial.println("Failed to read from DHT22 sensor!");
+    } else {
+      Serial.print("Humidity: ");
+      Serial.print(humi);
+      Serial.print("%");
+
+      Serial.print("  |  ");
+
+      Serial.print("Temperature: ");
+      Serial.print(tempC);
+      Serial.println("°C");
     }
+
+    if(lux == -1){
+      Serial.println("Failed to read from BH1750 sensor!");
+    } else {
+      Serial.print("Lux: ");
+      Serial.print(lux);
+      Serial.println(" lx");
+    }
+
+    Serial.print("Air Quality: ");
+    Serial.print(airQuality);
+    Serial.print("% | PPM : ");
+    Serial.println(ppm);
+    Serial.printf("Env -> L:%.0f T:%.1f H:%.1f | Soil -> S:%d%% R:%d%%\n", 
+                  lux, tempC, humi, moistureSurface, moistureRoot);
+
+    Serial.println("..................");
+
+    lastSensorRead = millis();
   }
 }

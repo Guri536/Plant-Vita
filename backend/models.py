@@ -33,9 +33,8 @@ class SensorReading(SQLModel, table=True):
     timestamp: datetime = Field(default_factory=datetime.utcnow, index=True)
     
     soil_moisture: float
-    temprature: float
+    temperature: float
     humidity: float
-    pressure: float
     light_lux: float
     air_quality: Optional[float] = None
     
