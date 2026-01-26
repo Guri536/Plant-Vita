@@ -14,10 +14,10 @@ services:
 
   web:
     build: ./backend
-    command: uvicorn main:app --host 0.0.0.0 --port 8000
     volumes:
-      - ./backend:/workspace/backend
-    working_dir: /workspace/backend
+      - .:/app/backend
+    working_dir: /app/backend
+    command: uvicorn main:app --host 0.0.0.0 --port 8000
     ports:
       - "${SERVER_PORT}:8000"
     environment:
@@ -30,15 +30,18 @@ services:
     build: ./frontend
     container_name: plantvita_frontend
     restart: always
-    command: npm run dev -- -H 0.0.0.0 -p 3000
     volumes:
-      - ./frontend:/app
+      - .:/app/frontend
       - /app/node_modules
-    working_dir: /app
+      - /app/.next
+    working_dir: /app/frontend
+    user: "root"
+    command: npm run dev -- -H 0.0.0.0 -p 3000
     ports:
       - "${FRONTEND_PORT}:3000"
     environment:
       NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
+      WATCHPACK_POLLING: "true"
     depends_on:
       - web
 

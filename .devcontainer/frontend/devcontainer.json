@@ -1,0 +1,21 @@
+{
+  "name": "PlantVita Frontend",
+  "dockerComposeFile": "../../docker-compose.yaml",
+  "service": "frontend",
+  "workspaceFolder": "/app/frontend",
+  "customizations": {
+    "vscode": {
+      "settings": {
+        "javascript.suggestionActions.enabled": true,
+        "editor.defaultFormatter": "esbenp.prettier-vscode"
+      },
+      "extensions": [
+        "dbaeumer.vscode-eslint",
+        "esbenp.prettier-vscode",
+        "dsznajder.es7-react-js-snippets"
+      ]
+    }
+  },
+  "remoteUser": "node",
+  "overrideCommand": true
+}

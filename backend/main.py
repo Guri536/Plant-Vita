@@ -1,34 +1,29 @@
 from fastapi import FastAPI, Depends, HTTPException
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import sessionmaker, selectinload
 from sqlmodel import SQLModel, select
-from typing import AsyncGenerator
+from typing import AsyncGenerator, cast
 from contextlib import asynccontextmanager
 import os
 
 from models import User, Plant, SensorReading
 from schemas import PlantCreate, PlantRead, SensorReadingCreate, SensorReadingRead
 
-# ✅ Correct env variable
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 if not DATABASE_URL:
     raise RuntimeError("DATABASE_URL environment variable is not set")
 
-# Engine (safe now)
 engine = create_async_engine(DATABASE_URL, echo=True)
 
-# Session dependency
 async def get_session() -> AsyncGenerator[AsyncSession, None]:
-    async_session = sessionmaker(
+    async_session = async_sessionmaker(
         engine,
-        class_=AsyncSession,
         expire_on_commit=False
     )
     async with async_session() as session:
         yield session
 
-# Lifespan (DB init)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     async with engine.begin() as conn:
@@ -76,7 +71,7 @@ async def readplants(
     statement = (
         select(Plant)
         .where(Plant.id == plant_id)
-        .options(selectinload(Plant.sensor_readings))
+        .options(selectinload(Plant.sensor_readings)) # type: ignore
     )
     result = await session.execute(statement)
     plant = result.scalars().first()
@@ -101,7 +96,7 @@ async def create_sensor_reading(
 
     db_reading = SensorReading(
         **reading.model_dump(),
-        plant_id=plant.id
+        plant_id= cast(int, plant.id)
     )
 
     session.add(db_reading)
