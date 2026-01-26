@@ -4,7 +4,7 @@ services:
   db: 
     image: postgres:15-alpine
     container_name: plantvita_db
-    restart : always
+    restart: always
     environment:
       POSTGRES_USER: ${DB_USER}
       POSTGRES_PASSWORD: ${DB_PASS}
@@ -16,7 +16,7 @@ services:
   
   web:
     build: ./backend  
-    command: "uvicorn main:app --host 0.0.0.0 --port 8000 --reload"
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
     volumes:
       - .:/workspace
     working_dir: /workspace/backend
@@ -27,6 +27,22 @@ services:
       GEMINI_KEY: ${GEMINI_KEY}  
     depends_on:
       - db
+
+  frontend:
+    build: ./frontend
+    container_name: plantvita_frontend
+    restart: always
+    command: npm run dev -- --host
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    working_dir: /app
+    ports:
+      - "${FRONTEND_PORT}:5173"
+    environment:
+      VITE_API_URL: ${API_URL}
+    depends_on:
+      - web
 
   adminer:
     image: adminer
