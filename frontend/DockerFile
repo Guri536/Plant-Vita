@@ -1,20 +1,12 @@
-# Use a Node.js base image
-FROM node:20.11-alpine
+FROM node:20-alpine
 
-# Set the working directory inside the container
 WORKDIR /app
 
-# Copy package files first to leverage Docker layer caching
 COPY package*.json ./
-
-# Install dependencies
 RUN npm install
 
-# Copy the rest of the application code
 COPY . .
 
-# Expose the port Vite uses (5173 by default)
-EXPOSE 5173
+EXPOSE 3000
 
-# The command is handled by docker-compose, but we include a default here
-CMD ["npm", "run", "dev", "--", "-H", "0.0.0.0"]
+CMD ["npm", "run", "dev", "--", "-H", "0.0.0.0", "-p", "3000"]
