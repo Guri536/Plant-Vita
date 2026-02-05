@@ -112,7 +112,8 @@ export default function PlantVitaHome() {
       <section className="grid md:grid-cols-2 gap-8 px-8 py-16 items-center">
         <div>
           <h2 className="text-4xl font-bold mb-4">
-            Know Your Plant.
+            Know Your Plant
+            <a href="http://localhost:8000">Here</a>
             <br />
             Grow with Confidence.
           </h2>

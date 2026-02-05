@@ -12,6 +12,7 @@ export default function AddPlantPage() {
         <p className="text-gray-600 mt-2">Enter basic details so PlantVita can start monitoring your plant’s health.</p>
         </div>
       </div>
+      
 
       {/* Form Card */}
       <Card className="max-w-3xl mx-auto rounded-2xl shadow-lg">

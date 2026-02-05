@@ -12,5 +12,5 @@
       "extensions": ["ms-python.python", "ms-python.vscode-pylance"]
     }
   },
-  "overrideCommand": true
+  "overrideCommand": true 
 }

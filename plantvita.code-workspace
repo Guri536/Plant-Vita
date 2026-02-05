@@ -2,27 +2,27 @@
   "folders": [
     {
       "name": "Backend (FastAPI)",
-      "path": "backend"
+      "path": "backend",
     },
     {
       "name": "Frontend (Next.js)",
-      "path": "frontend"
+      "path": "frontend",
     },
     {
       "name": "Root Config",
-      "path": "."
-    }
+      "path": ".",
+    },
   ],
   "settings": {
     "python.defaultInterpreterPath": "/usr/local/bin/python",
     "python.analysis.extraPaths": ["./backend"],
     "files.exclude": {
       "backend": false,
-      "frontend": false
-    }
+      "frontend": false,
+    },
   },
   "remote.containers.configs": {
     "backend": ".devcontainer/backend/devcontainer.json",
-    "frontend": ".devcontainer/frontend/devcontainer.json"
-  }
+    "frontend": ".devcontainer/frontend/devcontainer.json",
+  },
 }
