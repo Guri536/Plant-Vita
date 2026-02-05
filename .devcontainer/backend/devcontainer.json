@@ -9,8 +9,14 @@
         "python.analysis.extraPaths": ["/app/backend"],
         "python.defaultInterpreterPath": "/usr/local/bin/python"
       },
-      "extensions": ["ms-python.python", "ms-python.vscode-pylance"]
+      "extensions": [
+        "ms-python.python", 
+        "ms-python.vscode-pylance",
+        "ms-python.black-formatter"
+      ]
     }
   },
-  "overrideCommand": true 
+  "shutdownAction": "stopCompose",
+  "overrideCommand": true,
+  "postAttachCommand": "uvicorn main:app --host 0.0.0.0 --port 8000 --reload"
 }

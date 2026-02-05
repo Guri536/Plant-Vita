@@ -3,3 +3,8 @@ uvicorn[standard]
 sqlmodel
 psycopg2-binary
 asyncpg
+bcrypt==4.0.1
+passlib[bcrypt]
+python-jose[cryptography]
+python-multipart
+email-validator
