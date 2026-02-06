@@ -1,12 +1,13 @@
-from fastapi import FastAPI, Depends, HTTPException, status
+from fastapi import FastAPI, Depends, HTTPException, status, Header
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import sessionmaker, selectinload
 from sqlmodel import SQLModel, select, Session
 from typing import AsyncGenerator, cast, List
 from contextlib import asynccontextmanager
 import os
-
+from datetime import timedelta
 from models import User, Plant, SensorReading
 from schemas import (
     PlantCreate,
@@ -17,20 +18,28 @@ from schemas import (
     UserRead,
     Token,
     TokenData,
+    TokenRefreshRequest,
+    SocialLogin,
 )
 from auth import (
     get_hashed_password,
     verify_password,
     create_access_token,
+    create_refresh_token,
+    decode_token,
     SECRET_KEY,
     ALGORITHM,
+    ACCESS_TOKEN_EXPIRE_MINUTES,
 )
 from jose import JWTError, jwt
 
 DATABASE_URL = os.getenv("DB_URL")
+API_SECRET_KEY = os.getenv("API_SECRET_KEY")
 
 if not DATABASE_URL:
     raise RuntimeError("DATABASE_URL environment variable is not set")
+if not API_SECRET_KEY:
+    raise RuntimeError("API Secret Key not set")
 
 engine = create_async_engine(DATABASE_URL, echo=True)
 
@@ -52,6 +61,17 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Plant-Vita Backend", lifespan=lifespan)
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:8010",
+        "http://127.0.0.1:8010",
+    ],  # Your Frontend URL
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 @app.get("/")
@@ -177,4 +197,73 @@ async def login_for_access_token(
         )
 
     access_token = create_access_token(data={"sub": user.email})
-    return {"access_token": access_token, "token_type": "bearer"}
+    refresh_token = create_refresh_token(data={"sub": user.email})  # Generate Refresh
+
+    return {
+        "access_token": access_token,
+        "refresh_token": refresh_token,
+        "token_type": "bearer",
+    }
+
+
+@app.post("/social-login", response_model=Token)
+async def social_login(
+    login_data: SocialLogin,
+    x_api_key: str = Header(...),
+    session: AsyncSession = Depends(get_session),
+):
+    if x_api_key != API_SECRET_KEY:
+        raise HTTPException(status_code=401, detail="Invalid API Key")
+
+    statement = select(User).where(User.email == login_data.email)
+    result = await session.execute(statement)
+    user = result.scalars().first()
+
+    if not user:
+        db_user = User(email=login_data.email, hash_pass="SOCIAL_LOGIN_NO_PASS")
+        session.add(db_user)
+        await session.commit()
+        await session.refresh(db_user)
+
+    access_token_expires = timedelta(minutes=15)
+    access_token = create_access_token(
+        data={"sub": login_data.email}, expires_delta=access_token_expires
+    )
+    refresh_token = create_refresh_token(data={"sub": login_data.email})
+    return {
+        "access_token": access_token, 
+        "refresh_token": refresh_token, 
+        "token_type": "bearer"
+    }
+
+@app.post("/refresh", response_model=Token)
+async def refresh_token(
+    request: TokenRefreshRequest,
+    session: AsyncSession = Depends(get_session)
+):
+    payload = decode_token(request.refresh_token)
+    
+    if not payload:
+        raise HTTPException(status_code=401, detail="Invalid token")
+        
+    if payload.get("type") != "refresh":
+        raise HTTPException(status_code=401, detail="Invalid token type")
+
+    email = payload.get("sub")
+    if not email:
+        raise HTTPException(status_code=401, detail="Invalid token payload")
+
+    statement = select(User).where(User.email == email)
+    result = await session.execute(statement)
+    user = result.scalars().first()
+    if not user:
+         raise HTTPException(status_code=401, detail="User no longer exists")
+
+    new_access_token = create_access_token(data={"sub": email})
+    new_refresh_token = create_refresh_token(data={"sub": email})
+
+    return {
+        "access_token": new_access_token, 
+        "refresh_token": new_refresh_token, 
+        "token_type": "bearer"
+    }

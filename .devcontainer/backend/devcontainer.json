@@ -1,7 +1,7 @@
 {
   "name": "PlantVita API Backend",
   "dockerComposeFile": "../../docker-compose.yaml",
-  "service": "web",
+  "service": "backend",
   "workspaceFolder": "/app/backend",
   "customizations": {
     "vscode": {

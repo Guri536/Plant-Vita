@@ -2,11 +2,11 @@ FROM node:25.4-alpine
 
 WORKDIR /app/frontend
 
-RUN apk add --no-cache python3 make g++
 COPY package*.json ./
 RUN npm install
 
 COPY . .
+RUN mkdir -p .next && chown -R node:node /app/frontend
 RUN chown -R node:node /app/frontend
 
 USER node

@@ -113,7 +113,6 @@ export default function PlantVitaHome() {
         <div>
           <h2 className="text-4xl font-bold mb-4">
             Know Your Plant
-            <a href="http://localhost:8000">Here</a>
             <br />
             Grow with Confidence.
           </h2>

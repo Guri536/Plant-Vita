@@ -12,7 +12,7 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
-  web:
+  backend:
     build: ./backend
     volumes:
       - ./backend:/app/backend
@@ -38,13 +38,11 @@ services:
     command: npm run dev -- -H 0.0.0.0 -p 3000
     ports:
       - "${FRONTEND_PORT}:3000"
-    env_file:
-      - .env
     environment:
       NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
       WATCHPACK_POLLING: "true"
     depends_on:
-      - web
+      - backend
 
   adminer:
     image: adminer

@@ -1,48 +1,41 @@
-import { pool } from "@/lib/db";
-import bcrypt from "bcryptjs";
 import { NextResponse } from "next/server";
 
 export async function POST(req) {
   try {
     const { name, email, password } = await req.json();
 
-    if (!name || !email || !password) {
+    if (!email || !password) {
       return NextResponse.json(
-        { error: "Missing fields" },
-        { status: 400 }
+        { error: "Missing email or password" },
+        { status: 400 },
       );
     }
 
-    // Check if user already exists
-    const exists = await pool.query(
-      `SELECT 1 FROM "user" WHERE email = $1`,
-      [email]
-    );
+    const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
 
-    if (exists.rows.length > 0) {
+    const res = await fetch(`${apiUrl}/register`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ email, password }),
+    });
+
+    const data = await res.json();
+
+    if (!res.ok) {
       return NextResponse.json(
-        { error: "User already exists" },
-        { status: 409 }
+        { error: data.detail || "Registration failed" },
+        { status: res.status },
       );
     }
 
-    // Hash password
-    const hashedPassword = await bcrypt.hash(password, 10);
-
-    // ✅ CORRECT INSERT (MATCHES YOUR DB)
-    await pool.query(
-      `INSERT INTO "user" (email, hash_pass, "name")
-       VALUES ($1, $2, $3)`,
-      [email, hashedPassword, name]
-    );
-
-    return NextResponse.json({ success: true });
-
+    return NextResponse.json({ success: true, user: data });
   } catch (err) {
     console.error("REGISTER ERROR:", err);
     return NextResponse.json(
-      { error: "Registration failed" },
-      { status: 500 }
+      { error: "Internal Server Error" },
+      { status: 500 },
     );
   }
 }
