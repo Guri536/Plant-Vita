@@ -25,7 +25,7 @@ void saveWifiCreds() {
     String pass = server.arg("pass");
 
     Serial.println("Received WiFi Credentials!");
-    setWifiCreds(ssid, pass); // Saving wifi credentials in preferences
+    setWifiCreds(ssid, pass); 
     server.send(200, "application/json", "{\"status\":\"saved\"}");
     gotWifiCreds = true;
   } else {

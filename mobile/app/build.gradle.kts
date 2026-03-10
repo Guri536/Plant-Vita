@@ -67,4 +67,9 @@ dependencies {
     implementation(libs.retrofit)
     implementation(libs.converter.gson)
 
+    // Local Storage for JWT
+    implementation(libs.androidx.datastore.preferences)
+
+    // Google Sign-In
+    implementation(libs.play.services.auth)
 }
