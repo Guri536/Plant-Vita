@@ -7,6 +7,8 @@
 #include <WebServer.h>
 #include <DHT.h>
 #include <BH1750.h>
+#include <OneWire.h>
+#include <DallasTemperature.h>
 
 // Globals
 extern Preferences pref;
@@ -14,6 +16,8 @@ extern WebServer server;
 extern bool gotWifiCreds;
 extern DHT dht22;
 extern BH1750 bh1750;
+extern OneWire oneWire;
+extern DallasTemperature ds18b20;
 
 // Pin Layouts
 #define GREEN_LED_PIN 26
@@ -24,6 +28,7 @@ extern BH1750 bh1750;
 #define MQ135_PIN 36
 #define SOIL_SURFACE_PIN 39
 #define SOIL_ROOT_PIN 34
+#define DS18B20_PIN 32
 
 // I2C Pins
 #define I2C_SDA_PIN 21
@@ -49,5 +54,27 @@ extern BH1750 bh1750;
 #define WIFI_CONNECT_TIMEOUT 20000
 #define BUTTON_LONG_PRESS_MS 5000
 #define SENSOR_READ_TIME 5000
+
+// Server Target 
+#define SERVER_PORT 8888
+#define SERVER_ENDPOINT "/data"
+
+// ESP32-CAM UART link
+#define CAM_TX_PIN        17    // ESP32 TX → CAM RX
+#define CAM_RX_PIN        16    // ESP32 RX ← CAM TX
+#define CAM_UART_BAUD     921600
+
+// Capture intervals
+#define CAPTURE_INTERVAL  1800000  // 30 mins in ms
+
+// Framing protocol — must match CAM sketch
+#define FRAME_START_1     0xFF
+#define FRAME_START_2     0xAA
+#define FRAME_END_1       0xFF
+#define FRAME_END_2       0xBB
+#define FRAME_ERROR_2     0xEE
+
+// Image buffer — 80KB covers SXGA worst case
+#define IMAGE_BUFFER_SIZE 81920
 
 #endif

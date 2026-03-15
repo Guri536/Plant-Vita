@@ -1,6 +1,8 @@
 #include <config.h>
 #include <Arduino.h>
 #include "httpEndpoints.h"
+#include <HTTPClient.h>
+#include <ArduinoJson.h>
 
 void shutDownSystem() {
   Serial.println("Shutting down");
@@ -172,4 +174,128 @@ int getSoilMoisture(int pin) {
   int percentage = map(constrainedVal, SOIL_DRY_VAL, SOIL_WET_VAL, 0, 100);
   
   return percentage;
+}
+
+String getServerIP() {
+  return WiFi.gatewayIP().toString();
+}
+
+void sendDataToLaptop(float temp, float humi, float lux, float ppm, int airQuality, int moistSurface, int moistRoot) {
+  if (WiFi.status() != WL_CONNECTED) return;
+
+  HTTPClient http;
+  String url = String("http://") + getServerIP() + ":" + SERVER_PORT + SERVER_ENDPOINT;
+
+  http.begin(url);
+  http.addHeader("Content-Type", "application/json");
+
+  // Build JSON payload
+  StaticJsonDocument<256> doc;
+  doc["temp_c"]          = temp;
+  doc["humidity_pct"]    = humi;
+  doc["light_lux"]       = lux;
+  doc["air_ppm"]         = ppm;
+  doc["air_quality_pct"] = airQuality;
+  doc["soil_surface_pct"]= moistSurface;
+  doc["soil_root_pct"]   = moistRoot;
+
+  String payload;
+  serializeJson(doc, payload);
+
+  int httpCode = http.POST(payload);
+
+  if (httpCode == HTTP_CODE_OK) {
+    Serial.println("[HTTP] Data sent OK");
+  } else {
+    Serial.printf("[HTTP] POST failed, code: %d\n", httpCode);
+  }
+
+  http.end();
+}
+
+bool triggerCapture() {
+  Serial.println("Sending CAPTURE to CAM...");
+  Serial2.println("CAPTURE");
+
+  // Wait for start marker — timeout 10 seconds
+  // (camera needs time to capture and start sending)
+  unsigned long timeout = millis();
+  while (millis() - timeout < 10000) {
+    if (Serial2.available() >= 2) {
+      uint8_t b1 = Serial2.read();
+      uint8_t b2 = Serial2.read();
+
+      // Check for error marker
+      if (b1 == FRAME_START_1 && b2 == FRAME_ERROR_2) {
+        Serial.println("CAM reported capture error");
+        return false;
+      }
+
+      // Check for valid start marker
+      if (b1 == FRAME_START_1 && b2 == FRAME_START_2) {
+        Serial.println("Start marker received");
+        break;
+      }
+    }
+  }
+
+  // Read 4-byte length
+  while (Serial2.available() < 4) {
+    if (millis() - timeout > 10000) {
+      Serial.println("Timeout waiting for length bytes");
+      return false;
+    }
+  }
+
+  uint32_t imgLen = 0;
+  imgLen |= (uint32_t)Serial2.read() << 24;
+  imgLen |= (uint32_t)Serial2.read() << 16;
+  imgLen |= (uint32_t)Serial2.read() << 8;
+  imgLen |= (uint32_t)Serial2.read();
+
+  Serial.printf("Expecting %u bytes\n", imgLen);
+
+  if (imgLen > IMAGE_BUFFER_SIZE) {
+    Serial.println("Image too large for buffer — aborting");
+    return false;
+  }
+
+  // Read image bytes
+  uint32_t received = 0;
+  timeout = millis();
+  while (received < imgLen) {
+    if (Serial2.available()) {
+      imageBuffer[received++] = Serial2.read();
+      timeout = millis(); // Reset timeout on each byte received
+    }
+    if (millis() - timeout > 5000) {
+      Serial.println("Timeout mid-transfer");
+      return false;
+    }
+  }
+
+  // Read end marker + checksum
+  while (Serial2.available() < 3) delay(10);
+  uint8_t end1     = Serial2.read();
+  uint8_t end2     = Serial2.read();
+  uint8_t checksum = Serial2.read();
+
+  if (end1 != FRAME_END_1 || end2 != FRAME_END_2) {
+    Serial.println("End marker mismatch — corrupt frame");
+    return false;
+  }
+
+  // Verify checksum
+  uint8_t calculated = 0;
+  for (uint32_t i = 0; i < imgLen; i++) {
+    calculated ^= imageBuffer[i];
+  }
+
+  if (calculated != checksum) {
+    Serial.printf("Checksum mismatch — got 0x%02X expected 0x%02X\n", calculated, checksum);
+    return false;
+  }
+
+  Serial.printf("Image received OK — %u bytes, checksum verified\n", imgLen);
+  return true; // imageBuffer now holds the valid JPEG
 }
