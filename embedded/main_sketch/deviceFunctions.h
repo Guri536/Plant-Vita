@@ -1,8 +1,12 @@
+#ifndef DEVICE_FUNCTIONS_H
+#define DEVICE_FUNCTIONS_H
+
 #include <config.h>
 #include <Arduino.h>
 #include "httpEndpoints.h"
 #include <HTTPClient.h>
 #include <ArduinoJson.h>
+#include <SPIFFS.h>
 
 void shutDownSystem() {
   Serial.println("Shutting down");
@@ -213,36 +217,91 @@ void sendDataToLaptop(float temp, float humi, float lux, float ppm, int airQuali
   http.end();
 }
 
+bool uploadImage(uint32_t imgLen) {
+  WiFiClient client;
+  HTTPClient http;
+
+  String mac = WiFi.macAddress();
+  mac.replace(":", "");
+
+  char endpoint[64];
+  snprintf(endpoint, sizeof(endpoint), IMAGE_ENDPOINT, mac.c_str());
+
+  String url = "http://" + getServerIP() + ":" + String(SERVER_PORT) + endpoint;
+  Serial.println("Uploading from SPIFFS to: " + url);
+
+  File file = SPIFFS.open("/capture.jpg", FILE_READ);
+  if (!file) {
+    Serial.println("Failed to open SPIFFS file for upload");
+    return false;
+  }
+
+  http.begin(client, url);
+  http.addHeader("Content-Type", "image/jpeg");
+  http.addHeader("X-Device-MAC", WiFi.macAddress());
+
+  // Stream directly from SPIFFS — no RAM buffer
+  int httpCode = http.sendRequest("POST", &file, imgLen);
+  file.close();
+
+  // Clean up SPIFFS after upload
+  SPIFFS.remove("/capture.jpg");
+
+  if (httpCode == 200 || httpCode == 201) {
+    Serial.printf("Upload OK — HTTP %d\n", httpCode);
+    return true;
+  } else {
+    Serial.printf("Upload failed — HTTP %d\n", httpCode);
+    Serial.println(http.getString());
+    return false;
+  }
+}
+
 bool triggerCapture() {
+  captureInProgress = true;
+  while (Serial2.available()) Serial2.read();
+  delay(50);
+
   Serial.println("Sending CAPTURE to CAM...");
   Serial2.println("CAPTURE");
 
   // Wait for start marker — timeout 10 seconds
   // (camera needs time to capture and start sending)
   unsigned long timeout = millis();
+  bool markerFound = false;
+  uint8_t prev = 0;
+
   while (millis() - timeout < 10000) {
-    if (Serial2.available() >= 2) {
-      uint8_t b1 = Serial2.read();
-      uint8_t b2 = Serial2.read();
-
-      // Check for error marker
-      if (b1 == FRAME_START_1 && b2 == FRAME_ERROR_2) {
-        Serial.println("CAM reported capture error");
-        return false;
-      }
-
-      // Check for valid start marker
-      if (b1 == FRAME_START_1 && b2 == FRAME_START_2) {
+    if (Serial2.available()) {
+      uint8_t b = Serial2.read();
+      
+      if (prev == FRAME_START_1 && b == FRAME_START_2) {
         Serial.println("Start marker received");
+        markerFound = true;
         break;
       }
+      if (prev == FRAME_START_1 && b == FRAME_ERROR_2) {
+        Serial.println("CAM reported capture error");
+        captureInProgress = false;
+        return false;
+      }
+      prev = b;
+      timeout = millis(); // Reset on each byte received
     }
   }
 
-  // Read 4-byte length
+  if (!markerFound) {
+    Serial.println("Timeout waiting for start marker");
+    captureInProgress = false;
+    return false;
+  }
+
+  // Reset timeout before waiting for length bytes
+  timeout = millis();
   while (Serial2.available() < 4) {
-    if (millis() - timeout > 10000) {
+    if (millis() - timeout > 5000) {
       Serial.println("Timeout waiting for length bytes");
+      captureInProgress = false;
       return false;
     }
   }
@@ -255,21 +314,31 @@ bool triggerCapture() {
 
   Serial.printf("Expecting %u bytes\n", imgLen);
 
-  if (imgLen > IMAGE_BUFFER_SIZE) {
-    Serial.println("Image too large for buffer — aborting");
+  if (imgLen > 1000000) {
+    Serial.println("Image exceeds SPIFFS capacity — aborting");
     return false;
   }
 
-  // Read image bytes
+  File file = SPIFFS.open("/capture.jpg", FILE_WRITE);
+  if (!file) {
+    Serial.println("Failed to open SPIFFS file for writing");
+    return false;
+  }
+
   uint32_t received = 0;
   timeout = millis();
+
   while (received < imgLen) {
     if (Serial2.available()) {
-      imageBuffer[received++] = Serial2.read();
-      timeout = millis(); // Reset timeout on each byte received
+      file.write(Serial2.read());
+      received++;
+      timeout = millis();  // Reset timeout on every byte
     }
+
     if (millis() - timeout > 5000) {
-      Serial.println("Timeout mid-transfer");
+      Serial.printf("Timeout at byte %u of %u\n", received, imgLen);
+      file.close();
+      SPIFFS.remove("/capture.jpg");
       return false;
     }
   }
@@ -280,22 +349,31 @@ bool triggerCapture() {
   uint8_t end2     = Serial2.read();
   uint8_t checksum = Serial2.read();
 
+  file.close();
+
   if (end1 != FRAME_END_1 || end2 != FRAME_END_2) {
     Serial.println("End marker mismatch — corrupt frame");
+    SPIFFS.remove("/capture.jpg");
     return false;
   }
 
-  // Verify checksum
+  // Verify checksum by reading back from SPIFFS
+  File verify = SPIFFS.open("/capture.jpg", FILE_READ);
   uint8_t calculated = 0;
-  for (uint32_t i = 0; i < imgLen; i++) {
-    calculated ^= imageBuffer[i];
+  while (verify.available()) {
+    calculated ^= verify.read();
   }
+  verify.close();
 
   if (calculated != checksum) {
     Serial.printf("Checksum mismatch — got 0x%02X expected 0x%02X\n", calculated, checksum);
+    SPIFFS.remove("/capture.jpg");
     return false;
   }
 
-  Serial.printf("Image received OK — %u bytes, checksum verified\n", imgLen);
-  return true; // imageBuffer now holds the valid JPEG
+  Serial.printf("Image written to SPIFFS OK — %u bytes\n", imgLen);
+  captureInProgress = false;
+  return uploadImage(imgLen);
 }
+
+#endif

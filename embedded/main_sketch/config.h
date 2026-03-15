@@ -9,11 +9,13 @@
 #include <BH1750.h>
 #include <OneWire.h>
 #include <DallasTemperature.h>
+#include <HardwareSerial.h>
 
 // Globals
 extern Preferences pref;
 extern WebServer server;
 extern bool gotWifiCreds;
+extern bool captureInProgress;
 extern DHT dht22;
 extern BH1750 bh1750;
 extern OneWire oneWire;
@@ -58,14 +60,16 @@ extern DallasTemperature ds18b20;
 // Server Target 
 #define SERVER_PORT 8888
 #define SERVER_ENDPOINT "/data"
+#define IMAGE_ENDPOINT "/plants/%s/image/"
 
 // ESP32-CAM UART link
 #define CAM_TX_PIN        17    // ESP32 TX → CAM RX
 #define CAM_RX_PIN        16    // ESP32 RX ← CAM TX
-#define CAM_UART_BAUD     921600
+#define CAM_UART_BAUD     115200
+#define RX_BUFFER_SIZE 1024
 
 // Capture intervals
-#define CAPTURE_INTERVAL  1800000  // 30 mins in ms
+#define CAPTURE_INTERVAL  15000    // 30 mins in ms
 
 // Framing protocol — must match CAM sketch
 #define FRAME_START_1     0xFF
@@ -73,8 +77,5 @@ extern DallasTemperature ds18b20;
 #define FRAME_END_1       0xFF
 #define FRAME_END_2       0xBB
 #define FRAME_ERROR_2     0xEE
-
-// Image buffer — 80KB covers SXGA worst case
-#define IMAGE_BUFFER_SIZE 81920
 
 #endif

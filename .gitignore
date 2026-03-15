@@ -1,3 +1,4 @@
 *.env
 .vs/
 .vscode/settings.json
+received_images

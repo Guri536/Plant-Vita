@@ -12,11 +12,11 @@ BH1750 bh1750;
 OneWire oneWire(DS18B20_PIN);
 DallasTemperature ds18b20(&oneWire);
 bool gotWifiCreds = false;
+bool captureInProgress = false;
 
 // CAM link
 unsigned long lastCapture = 0;
-bool pendingCapture = false;       // Set by MQTT or button/screen trigger
-uint8_t imageBuffer[IMAGE_BUFFER_SIZE];
+bool pendingCapture = false;  // Set by MQTT or button/screen trigger
 
 
 // Timers
@@ -24,7 +24,6 @@ unsigned long lastSensorRead = 0;
 
 void setup() {
   Serial.begin(115200);
-  Serial.println("Base listening on Pin 35...");
 
   // PINS
   pinMode(GREEN_LED_PIN, OUTPUT);
@@ -47,22 +46,30 @@ void setup() {
   showLogo(66, 20);
   delay(2000);
 
+  Serial2.setRxBufferSize(4096);
   Serial2.begin(CAM_UART_BAUD, SERIAL_8N1, CAM_RX_PIN, CAM_TX_PIN);
   Serial.println("CAM link ready on GPIO16/17");
 
   // Verify CAM is alive
+  delay(3000);  // Wait for CAM to fully boot
+
   Serial2.println("PING");
-  delay(200);
-  if (Serial2.available()) {
-    String response = Serial2.readStringUntil('\n');
-    response.trim();
-    if (response == "OK") {
-      Serial.println("CAM responded to PING — link confirmed");
-    } else {
-      Serial.println("CAM unexpected response: " + response);
+  unsigned long pingTimeout = millis();
+  String response = "";
+
+  while (millis() - pingTimeout < 2000) {
+    if (Serial2.available()) {
+      char c = Serial2.read();
+      if (c == '\n') break;
+      if (c != '\r') response += c;
     }
+  }
+
+  response.trim();
+  if (response == "OK") {
+    Serial.println("CAM responded to PING — link confirmed");
   } else {
-    Serial.println("CAM not responding to PING — check wiring");
+    Serial.println("CAM not responding — response was: [" + response + "]");
   }
 
   // Checking for WiFi creds
@@ -70,6 +77,12 @@ void setup() {
   String ssid = pref.getString("ssid", "");
   String pass = pref.getString("pass", "");
   pref.end();
+
+  if (!SPIFFS.begin(true)) {
+    Serial.println("SPIFFS mount failed");
+  } else {
+    Serial.printf("SPIFFS mounted — %u KB free\n", SPIFFS.totalBytes() / 1024);
+  }
 
   if (ssid == "") {
     showStatus("SETUP MODE", "1. Connect to:\n   Plant-Vita-Setup\n2. Open App", TFT_BLUE);
@@ -126,21 +139,14 @@ void setup() {
 void loop() {
   checkResetButton();
 
-  // if (Serial2.available()) {
-  //   char c = Serial2.read();
-  //   if ((c >= 32 && c <= 126) || c == '\n' || c == '\r') {
-  //     Serial.write(c);
-  //   }
-  // }
-
-  if (millis() - lastSensorRead > SENSOR_READ_TIME) {
+  if (!captureInProgress && millis() - lastSensorRead > SENSOR_READ_TIME) {
     float humi = dht22.readHumidity();
     float tempC = dht22.readTemperature();
     float lux = getLightLevel();
     int airQuality = getAirQuality();
     float ppm = getPPM();
     int moistureSurface = getSoilMoisture(SOIL_SURFACE_PIN);
-    int moistureRoot    = getSoilMoisture(SOIL_ROOT_PIN);
+    int moistureRoot = getSoilMoisture(SOIL_ROOT_PIN);
     ds18b20.requestTemperatures();
     delay(100);
     float soilTemp = ds18b20.getTempCByIndex(0);
@@ -159,7 +165,7 @@ void loop() {
       Serial.println("°C");
     }
 
-    if(lux == -1){
+    if (lux == -1) {
       Serial.println("Failed to read from BH1750 sensor!");
     } else {
       Serial.print("Lux: ");
@@ -174,7 +180,7 @@ void loop() {
     Serial.print("DS18B20 Temp: ");
     Serial.print(soilTemp);
     Serial.println("°C");
-    Serial.printf("Env -> L:%.0f T:%.1f H:%.1f | Soil -> S:%d%% R:%d%%\n", 
+    Serial.printf("Env -> L:%.0f T:%.1f H:%.1f | Soil -> S:%d%% R:%d%%\n",
                   lux, tempC, humi, moistureSurface, moistureRoot);
 
     Serial.println("..................");
@@ -194,13 +200,10 @@ void loop() {
   if (pendingCapture) {
     pendingCapture = false;
     lastCapture = millis();
-
     if (triggerCapture()) {
-      // imageBuffer holds valid JPEG — next step will POST it
-      Serial.println("Ready to upload image");
-      // uploadImage() goes here — we'll write that next
+      Serial.println("Capture successful — ready to upload");
     } else {
-      Serial.println("Capture failed — will retry next interval");
+      Serial.println("Capture failed");
     }
   }
 }

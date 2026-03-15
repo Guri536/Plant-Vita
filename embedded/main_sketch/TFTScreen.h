@@ -1,3 +1,6 @@
+#ifndef TFT_SCREEN
+#define TFT_SCREEN
+
 #include <Arduino.h>
 #include <TFT_eSPI.h>
 #include "imagesArrays.h"
@@ -106,3 +109,5 @@ void showSensorData(float temp, float humi, float lux, float ds18Temp, int soilS
   tft.setTextDatum(MC_DATUM);
   tft.drawString("live sensor data", 80, 95, 1);
 }
+
+#endif

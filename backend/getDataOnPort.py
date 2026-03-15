@@ -1,5 +1,6 @@
 from flask import Flask, request, jsonify
 from datetime import datetime
+import os
 
 app = Flask(__name__)
 
@@ -56,6 +57,35 @@ def receive_data():
 @app.route("/", methods=["GET"])
 def index():
     return "Plant-Vita receiver is running.", 200
+
+@app.route("/plants/<mac>/image/", methods=["POST"])
+def receive_image(mac):
+    ts = datetime.now().strftime("%H:%M:%S")
+    
+    if request.content_type != "image/jpeg":
+        print(f"{RED}Wrong content type: {request.content_type}{RESET}")
+        return jsonify({"error": "expected image/jpeg"}), 400
+
+    img_bytes = request.data
+    if not img_bytes:
+        print(f"{RED}No image data received{RESET}")
+        return jsonify({"error": "no image data"}), 400
+
+    # Save to disk so you can verify it opened correctly
+    os.makedirs("received_images", exist_ok=True)
+    filename = f"received_images/{mac}_{ts.replace(':', '')}.jpg"
+    with open(filename, "wb") as f:
+        f.write(img_bytes)
+
+    print(f"\n{BOLD}{CYAN}{'─'*52}{RESET}")
+    print(f"{BOLD} Image Received │ {ts}{RESET}")
+    print(f"{CYAN}{'─'*52}{RESET}")
+    print(f"  {YELLOW} MAC          {RESET}: {mac}")
+    print(f"  {YELLOW} Size         {RESET}: {len(img_bytes):,} bytes ({len(img_bytes)/1024:.1f} KB)")
+    print(f"  {GREEN} Saved to     {RESET}: {filename}")
+    print(f"{CYAN}{'─'*52}{RESET}")
+
+    return jsonify({"status": "ok", "bytes_received": len(img_bytes)}), 200
 
 
 # ── Main ────────────────────────────────────────────────────────────────────
