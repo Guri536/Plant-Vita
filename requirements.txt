@@ -1,0 +1,33 @@
+# Plant-Vita Vision Microservice — Python dependencies
+# Install with:  pip install -r requirements.txt
+#
+# Python 3.12 recommended.
+# For CUDA: install the correct torch/torchvision wheel from pytorch.org FIRST,
+# then run pip install -r requirements.txt to avoid overwriting with the CPU build.
+
+# ── Web framework ─────────────────────────────────────────────────────────────
+fastapi>=0.111.0
+uvicorn[standard]>=0.30.0
+python-multipart>=0.0.9      # required for UploadFile / multipart/form-data
+
+# ── Deep learning ─────────────────────────────────────────────────────────────
+# CPU-only fallback — replace with a CUDA wheel from pytorch.org for GPU support.
+torch>=2.3.0 --index-url https://download.pytorch.org/whl/cu126
+torchvision>=0.18.0 --index-url https://download.pytorch.org/whl/cu126
+
+# ── SAM3 (via Ultralytics) ────────────────────────────────────────────────────
+ultralytics>=8.2.0
+
+# ── Computer vision ───────────────────────────────────────────────────────────
+# Use opencv-python if you need a display (dev machine).
+# Use opencv-python-headless in production / server environments.
+opencv-python-headless>=4.9.0
+
+# ── Image handling ────────────────────────────────────────────────────────────
+Pillow>=10.0.0
+ 
+# ── Numerics ──────────────────────────────────────────────────────────────────
+numpy>=1.26.0
+
+# ── HTTP client (optional — for integration tests / health checks) ─────────────
+httpx>=0.27.0
