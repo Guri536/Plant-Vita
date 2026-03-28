@@ -9,6 +9,10 @@
       "path": "frontend",
     },
     {
+      "name": "Processing Service (FastAPI)",
+      "path": "processing_service",
+    },
+    {
       "name": "Root Config",
       "path": ".",
     },
@@ -19,6 +23,7 @@
     "files.exclude": {
       "backend": false,
       "frontend": false,
+      "processing_service": false,
     },
   },
   "remote.containers.configs": {
