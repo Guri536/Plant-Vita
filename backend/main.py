@@ -1,47 +1,96 @@
-from fastapi import FastAPI, Depends, HTTPException, status, Header
-from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
-from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
-from sqlalchemy.orm import sessionmaker, selectinload
-from sqlmodel import SQLModel, select, Session
-from typing import AsyncGenerator, cast, List
-from contextlib import asynccontextmanager
+"""
+main.py  (updated)
+───────────────────
+Plant-Vita FastAPI backend.
+
+Changes vs original:
+  • POST /plants/{mac_address}/image/
+      - Accepts multipart JPEG from ESP32-CAM
+      - Saves to Google Cloud Storage (or local disk as fallback)
+      - Fires a BackgroundTask that:
+          1. Calls the host-side Vision Microservice → ResNet18 + SAM3
+          2. Writes all vision fields back to the Image row
+          3. If trigger_llm is True → calls Gemini API for a diagnosis
+  • GET /plants/{plant_id}/images/   — list all images for a plant
+  • GET /plants/{plant_id}/diagnosis/ — latest image + vision + Gemini result
+  • GET /health                      — backend + vision service liveness
+"""
+
+from __future__ import annotations
+
+import logging
 import os
+from contextlib import asynccontextmanager
 from datetime import timedelta
-from models import User, Plant, SensorReading
+from typing import AsyncGenerator, List, cast
+
+from fastapi import (
+    BackgroundTasks,
+    Depends,
+    FastAPI,
+    File,
+    Header,
+    HTTPException,
+    UploadFile,
+    status,
+)
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+from jose import JWTError, jwt
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.orm import selectinload
+from sqlmodel import SQLModel, select
+
+from auth import (
+    ACCESS_TOKEN_EXPIRE_MINUTES,
+    ALGORITHM,
+    SECRET_KEY,
+    create_access_token,
+    create_refresh_token,
+    decode_token,
+    get_hashed_password,
+    verify_password,
+)
+from models import Image, Plant, SensorReading, User
 from schemas import (
+    ImageRead,
+    ImageUploadResponse,
     PlantCreate,
     PlantRead,
     SensorReadingCreate,
     SensorReadingRead,
-    UserCreate,
-    UserRead,
+    SocialLogin,
     Token,
     TokenData,
     TokenRefreshRequest,
-    SocialLogin,
+    UserCreate,
+    UserRead,
 )
-from auth import (
-    get_hashed_password,
-    verify_password,
-    create_access_token,
-    create_refresh_token,
-    decode_token,
-    SECRET_KEY,
-    ALGORITHM,
-    ACCESS_TOKEN_EXPIRE_MINUTES,
+from vision_client import call_vision_service, check_vision_health
+
+# ── Logging ───────────────────────────────────────────────────────────────────
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s  %(levelname)-8s  %(name)s — %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
 )
-from jose import JWTError, jwt
+logger = logging.getLogger("plantvita.backend")
+
+# ── Config ────────────────────────────────────────────────────────────────────
 
 DATABASE_URL = os.getenv("DB_URL")
 API_SECRET_KEY = os.getenv("API_SECRET_KEY")
+GCS_BUCKET = os.getenv("GCS_BUCKET", "")  # optional — falls back to local
 
 if not DATABASE_URL:
-    raise RuntimeError("DATABASE_URL environment variable is not set")
+    raise RuntimeError("DB_URL environment variable is not set")
 if not API_SECRET_KEY:
-    raise RuntimeError("API Secret Key not set")
+    raise RuntimeError("API_SECRET_KEY environment variable is not set")
 
-engine = create_async_engine(DATABASE_URL, echo=True)
+# ── Database ──────────────────────────────────────────────────────────────────
+
+engine = create_async_engine(DATABASE_URL, echo=False)
 
 
 async def get_session() -> AsyncGenerator[AsyncSession, None]:
@@ -59,29 +108,26 @@ async def lifespan(app: FastAPI):
     yield
 
 
+# ── App ───────────────────────────────────────────────────────────────────────
+
 app = FastAPI(title="Plant-Vita Backend", lifespan=lifespan)
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:8010",
-        "http://127.0.0.1:8010",
-    ],  # Your Frontend URL
+    allow_origins=["http://localhost:8010", "http://127.0.0.1:8010"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-
-@app.get("/")
-def read_root():
-    return {"message": "Plant-Vita backend is running", "database": "Connected"}
+# ── Auth helpers ──────────────────────────────────────────────────────────────
 
 
 async def get_current_user(
-    token: str = Depends(oauth2_scheme), session: AsyncSession = Depends(get_session)
-):
+    token: str = Depends(oauth2_scheme),
+    session: AsyncSession = Depends(get_session),
+) -> User:
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",
@@ -96,84 +142,416 @@ async def get_current_user(
     except JWTError:
         raise credentials_exception
 
-    statement = select(User).where(User.email == token_data.email)
-    result = await session.execute(statement)
+    result = await session.execute(select(User).where(User.email == token_data.email))
     user = result.scalars().first()
     if user is None:
         raise credentials_exception
     return user
 
 
-@app.post("/plants/", response_model=PlantRead)
-async def create_plant(
-    plant: PlantCreate,
-    current_user: User = Depends(get_current_user),
-    session: AsyncSession = Depends(get_session),
-):
-    db_plant = Plant(**plant.model_dump(), owner_id=current_user.id or 0)
-
-    session.add(db_plant)
-    await session.commit()
-    await session.refresh(db_plant)
-    return db_plant
+# ── Image storage helper ──────────────────────────────────────────────────────
 
 
-@app.get("/plants/{plant_id}", response_model=PlantRead)
-async def readplants(plant_id: int, session: AsyncSession = Depends(get_session)):
-    statement = (
-        select(Plant)
-        .where(Plant.id == plant_id)
-        .options(selectinload(Plant.sensor_readings))  # type: ignore
+async def _store_image(jpeg_bytes: bytes, mac: str, image_id: int) -> str:
+    """
+    Store JPEG bytes and return a public URL.
+
+    If GCS_BUCKET is configured, stream to Google Cloud Storage.
+    Otherwise, write to ./received_images/ (dev/fallback mode).
+    """
+    filename = f"plant_{mac}_{image_id}.jpg"
+
+    if GCS_BUCKET:
+        try:
+            from google.cloud import storage as gcs  # type: ignore[import]
+
+            client = gcs.Client()
+            blob = client.bucket(GCS_BUCKET).blob(f"images/{filename}")
+            blob.upload_from_string(jpeg_bytes, content_type="image/jpeg")
+            blob.make_public()
+            return blob.public_url
+        except Exception as exc:
+            logger.warning("GCS upload failed, falling back to local: %s", exc)
+
+    # Local fallback — useful in development / before GCS is wired
+    import aiofiles  # pip install aiofiles
+
+    local_dir = "received_images"
+    os.makedirs(local_dir, exist_ok=True)
+    path = os.path.join(local_dir, filename)
+    async with aiofiles.open(path, "wb") as f:
+        await f.write(jpeg_bytes)
+    return f"/received_images/{filename}"  # relative URL — serve with StaticFiles if needed
+
+
+# ── Vision background task ────────────────────────────────────────────────────
+
+
+async def _run_vision_and_LLM_inference(
+    image_id: int,
+    jpeg_bytes: bytes,
+    plant_id: int,
+) -> None:
+    """
+    BackgroundTask: calls Vision Microservice → writes results → optional Gemini call.
+
+    Runs after the HTTP response has already been sent to the ESP32-CAM so the
+    device doesn't have to wait for SAM3 + ResNet18 (~5-20 s on CPU).
+    """
+    async_session = async_sessionmaker(
+        engine, class_=AsyncSession, expire_on_commit=False
     )
-    result = await session.execute(statement)
-    plant = result.scalars().first()
 
-    if not plant:
+    async with async_session() as session:
+        result = await session.execute(select(Plant).where(Plant.id == plant_id))
+        plant = result.scalars().first()
+
+    if not plant or not plant.species:
         raise HTTPException(status_code=404, detail="Plant not found")
 
-    return plant
+    # ── 1. Call Vision Microservice ───────────────────────────────────────────
+    vision = await call_vision_service(
+        jpeg_bytes, filename=f"plant_{plant_id}.jpg", plant_species=plant.species
+    )
+
+    # ── 2. Persist vision fields ──────────────────────────────────────────────
+    async with async_session() as session:
+        result = await session.execute(select(Image).where(Image.id == image_id))
+        img = result.scalars().first()
+        if img is None:
+            logger.error("Image row %d not found — vision results discarded", image_id)
+            return
+
+        img.green_density = vision.get("green_density")
+        img.segmentation_success = vision.get("segmentation_success")
+        img.detected_species = vision.get("species")
+        img.species_confidence = vision.get("species_confidence")
+        img.in_model_scope = vision.get("in_model_scope")
+        img.detected_health = vision.get("health")
+        img.health_confidence = vision.get("health_confidence")
+        img.trigger_llm = vision.get("trigger_llm")
+        img.vision_error = vision.get("vision_error")
+
+        session.add(img)
+        await session.commit()
+
+    logger.info(
+        "Vision results written for image_id=%d  trigger_llm=%s",
+        image_id,
+        vision.get("trigger_llm"),
+    )
+
+    # ── 3. OpenRouter diagnosis (only when trigger_llm is True) ───────────────────
+    if vision.get("trigger_llm"):
+        await _call_openrouter(image_id, img.image_url, async_session)
 
 
-@app.get("/plants/my_plants", response_model=List[PlantRead])
-def read_my_plants(
-    current_user: User = Depends(get_current_user),
-    session: Session = Depends(get_session),
-):
-    return current_user.plants
+async def _call_gemini(
+    image_id: int,
+    image_url: str,
+    async_session_maker: async_sessionmaker,
+) -> None:
+    """
+    Calls the Gemini Vision API with the stored image URL and writes the
+    natural-language diagnosis back to the Image row.
+
+    Requires GEMINI_API_KEY in the environment.
+    """
+    gemini_key = os.getenv("GEMINI_API_KEY", "")
+    if not gemini_key:
+        logger.warning("GEMINI_API_KEY not set — skipping Gemini diagnosis")
+        return
+
+    try:
+        import google.generativeai as genai  # type: ignore[import]
+
+        genai.configure(api_key=gemini_key)
+        model = genai.GenerativeModel("gemini-1.5-flash")
+        prompt = (
+            "You are a plant pathologist. Analyze this plant image and answer:\n"
+            "1. Is the plant healthy? If not, what disease or condition is visible?\n"
+            "2. What are the visible symptoms?\n"
+            "3. What treatment or care changes do you recommend?\n"
+            "Be concise (3-5 sentences)."
+        )
+        response = model.generate_content([{"url": image_url}, prompt])
+        diagnosis = response.text.strip()
+    except Exception as exc:
+        logger.error("Gemini API call failed: %s", exc)
+        diagnosis = f"Gemini API error: {exc}"
+
+    async with async_session_maker() as session:
+        result = await session.execute(select(Image).where(Image.id == image_id))
+        img = result.scalars().first()
+        if img:
+            img.ai_diagnosis = diagnosis
+            session.add(img)
+            await session.commit()
+    logger.info("Gemini diagnosis written for image_id=%d", image_id)
 
 
-@app.post("/plants/{mac_address}/readings/", response_model=SensorReadingRead)
-async def create_sensor_reading(
-    mac_address: str,
-    reading: SensorReadingCreate,
-    session: AsyncSession = Depends(get_session),
-):
-    statement = select(Plant).where(Plant.mac_address == mac_address)
-    result = await session.execute(statement)
-    plant = result.scalars().first()
+async def _call_openrouter(
+    image_id: int,
+    image_url: str,
+    async_session_maker: async_sessionmaker,
+) -> None:
+    """
+    Calls a Vision LLM via OpenRouter with the stored image URL and writes the
+    natural-language diagnosis back to the Image row.
 
-    if not plant:
-        raise HTTPException(status_code=404, detail="Device/Plant not registered")
+    Now uses dynamic context (Sensor data, history, and vision pre-scans).
+    Requires OPENROUTER_API_KEY in the environment.
+    """
+    openrouter_key = os.getenv("OPENROUTER_API_KEY", "")
+    if not openrouter_key:
+        logger.warning("OPENROUTER_API_KEY not set — skipping LLM diagnosis")
+        return
 
-    db_reading = SensorReading(**reading.model_dump(), plant_id=cast(int, plant.id))
+    # ── Handle Local vs. Cloud Image URLs ────────────────────────────────────
+    payload_image_url = image_url
 
-    session.add(db_reading)
-    await session.commit()
-    await session.refresh(db_reading)
-    return db_reading
+    # If the URL doesn't start with http, it's a local file.
+    if not image_url.startswith("http"):
+        import base64
+        import aiofiles
+
+        # Strip the leading slash so it correctly points to the local folder
+        # relative to where you run your FastAPI app (e.g., "received_images/...")
+        local_file_path = image_url.lstrip("/")
+
+        try:
+            async with aiofiles.open(local_file_path, "rb") as img_file:
+                image_bytes = await img_file.read()
+                base64_encoded = base64.b64encode(image_bytes).decode("utf-8")
+                # Create the standard Data URI format that Vision LLMs expect
+                payload_image_url = f"data:image/jpeg;base64,{base64_encoded}"
+        except FileNotFoundError:
+            logger.error("Could not find local image on disk: %s", local_file_path)
+            # Write error to DB and exit early
+            async with async_session_maker() as session:
+                result = await session.execute(
+                    select(Image).where(Image.id == image_id)
+                )
+                if img := result.scalars().first():
+                    img.ai_diagnosis = (
+                        "Error: Local image file lost before AI analysis."
+                    )
+                    session.add(img)
+                    await session.commit()
+            return
+
+    # ── 1. Gather Context from Database ──────────────────────────────────────
+    async with async_session_maker() as session:
+        # Get current image and plant ID
+        img_result = await session.execute(select(Image).where(Image.id == image_id))
+        current_img = img_result.scalars().first()
+        if not current_img:
+            return
+
+        plant_id = current_img.plant_id
+
+        # Get plant details
+        plant_result = await session.execute(select(Plant).where(Plant.id == plant_id))
+        plant = plant_result.scalars().first()
+        plant_name = plant.species if plant and plant.species else "Unknown Plant"
+
+        # Get latest sensor reading
+        sensor_result = await session.execute(
+            select(SensorReading)
+            .where(SensorReading.plant_id == plant_id)
+            .order_by(SensorReading.timestamp.desc())  # type: ignore[attr-defined]
+            .limit(1)
+        )
+        latest_sensor = sensor_result.scalars().first()
+
+        # Get previous AI diagnosis (skip the current image)
+        history_result = await session.execute(
+            select(Image)
+            .where(
+                Image.plant_id == plant_id,
+                Image.id != image_id,
+                Image.ai_diagnosis != None,
+            )
+            .order_by(Image.timestamp.desc())  # type: ignore[attr-defined]
+            .limit(1)
+        )
+        last_image = history_result.scalars().first()
+
+    # ── 2. Format Variables for the Prompt ───────────────────────────────────
+    if latest_sensor:
+        temp = f"{latest_sensor.temperature}°C"
+        moisture = f"{latest_sensor.soil_moisture}%"
+        humidity = f"{latest_sensor.humidity}%"
+        lux = f"{latest_sensor.light_lux} lx"
+    else:
+        temp = moisture = humidity = lux = "Sensor offline/Unknown"
+
+    if last_image and last_image.ai_diagnosis:
+        # Slice it down slightly so the prompt doesn't get infinitely long over time
+        past_history = last_image.ai_diagnosis[:300] + "..."
+    else:
+        past_history = "No previous diseases recorded."
+
+    if current_img.detected_health:
+        pre_scan = f"Local Vision AI predicts: {current_img.detected_health} (Confidence: {current_img.health_confidence})"
+    else:
+        pre_scan = "No local vision prescan available."
+
+    # ── 3. The Mega-Prompt ───────────────────────────────────────────────────
+    prompt = f"""You are an expert plant pathologist and agronomist. 
+Analyze the provided plant image alongside its environmental sensor data and medical history to provide a highly accurate diagnosis.
+
+### 📊 Contextual Data
+* **Plant Species:** {plant_name}
+* **Current Sensor Readings:** Temperature: {temp} | Soil Moisture: {moisture} | Ambient Humidity: {humidity} | Light: {lux}
+* **Vision AI Pre-scan:** {pre_scan}
+* **Past Diagnostic History:** {past_history}
+
+### 🎯 Your Task
+Based on the visual evidence in the image AND the contextual data provided above, provide a comprehensive assessment:
+
+1. **Primary Diagnosis:** What is the most likely issue? (Consider diseases, pests, watering habits, or environmental stress).
+2. **Data Correlation:** Explicitly explain how the visible symptoms correlate with the sensor readings or past history. 
+3. **Recommended Action:** Provide 2-3 specific, actionable steps to remedy the situation based on the data.
+
+### 📝 Output Rules
+* Be concise and professional.
+* Do not hallucinate data; if the sensor data contradicts the visual image, point out the discrepancy.
+* Format your response using clear markdown headings and bullet points for readability.
+"""
+
+    # ── 4. Call OpenRouter ───────────────────────────────────────────────────
+    try:
+        from openai import AsyncOpenAI, RateLimitError, APIStatusError
+
+        client = AsyncOpenAI(
+            base_url="https://openrouter.ai/api/v1",
+            api_key=openrouter_key,
+            max_retries=2,
+        )
+
+        fallback_models = [
+            "google/gemma-3-27b-it:free",
+            "meta-llama/llama-3.2-11b-vision-instruct:free",
+            "qwen/qwen2.5-vl-72b-instruct:free",
+            "openrouter/auto",  # 'auto' is generally better than 'free' for fallback routing on OpenRouter
+        ]
+
+        diagnosis = None
+
+        for model_id in fallback_models:
+            try:
+                logger.info(f"Attempting OpenRouter diagnosis with {model_id}...")
+
+                response = await client.chat.completions.create(
+                    model=model_id,
+                    messages=[
+                        {
+                            "role": "user",
+                            "content": [
+                                {"type": "text", "text": prompt},
+                                {
+                                    "type": "image_url",
+                                    "image_url": {"url": payload_image_url},
+                                },
+                            ],
+                        }
+                    ],
+                    extra_headers={
+                        "HTTP-Referer": "https://your-site-url.com",
+                        "X-Title": "Plant-Vita",
+                    },
+                )
+
+                diagnosis = (
+                    response.choices[0].message.content
+                    or "OpenRouter didn't return a diagnosis"
+                ).strip()
+                logger.info(f"Successfully got diagnosis from {model_id}")
+                break  # Success! Break out of the loop.
+
+            except RateLimitError:
+                logger.warning(
+                    f"Model {model_id} is rate-limited (429). Trying next fallback..."
+                )
+                continue
+
+            except APIStatusError as e:
+                if e.status_code == 429:
+                    logger.warning(
+                        f"Model {model_id} returned a 429 status. Trying next fallback..."
+                    )
+                    continue
+                # If it's a 400 (Bad Request) or 500 (Internal Server Error), still failover
+                logger.warning(
+                    f"Model {model_id} failed with status {e.status_code}: {e}. Trying next..."
+                )
+                continue
+
+            except Exception as e:
+                logger.warning(
+                    f"Model {model_id} failed with unexpected error: {e}. Trying next..."
+                )
+                continue
+
+        if not diagnosis:
+            logger.error("All fallback models failed or were rate-limited.")
+            diagnosis = "AI diagnosis is temporarily unavailable due to high server load. Please try again later."
+
+    except Exception as exc:
+        logger.error("OpenRouter API call failed: %s", exc)
+        diagnosis = f"OpenRouter API error: {exc}"
+
+    # ── 5. Write the diagnosis back to the database ──────────────────────────
+    async with async_session_maker() as session:
+        # Re-fetch the image row in a new session to ensure we don't hit state issues
+        result = await session.execute(select(Image).where(Image.id == image_id))
+        img = result.scalars().first()
+        if img:
+            img.ai_diagnosis = diagnosis
+            session.add(img)
+            await session.commit()
+
+    logger.info("OpenRouter diagnosis written for image_id=%d", image_id)
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# ENDPOINTS
+# ═════════════════════════════════════════════════════════════════════════════
+
+
+# ── Ops ───────────────────────────────────────────────────────────────────────
+
+
+@app.get("/")
+def read_root():
+    return {"message": "Plant-Vita backend is running", "database": "Connected"}
+
+
+@app.get("/health", tags=["ops"])
+async def health():
+    """Backend liveness + vision service reachability."""
+    vision_status = await check_vision_health()
+    return {
+        "backend": "ok",
+        "vision_service": vision_status or "unreachable",
+    }
+
+
+# ── Auth ───────────────────────────────────────────────────────────────────────
 
 
 @app.post("/register", response_model=UserRead)
-async def register_user(user: UserCreate, session: AsyncSession = Depends(get_session)):
-    statement = select(User).where(User.email == user.email)
-    result = await session.execute(statement)
-    existing_user = result.scalars().first()
-
-    if existing_user:
+async def register_user(
+    user: UserCreate,
+    session: AsyncSession = Depends(get_session),
+):
+    result = await session.execute(select(User).where(User.email == user.email))
+    existing = result.scalars().first()
+    if existing:
         raise HTTPException(status_code=400, detail="Email already registered")
 
-    hashed_pwd = get_hashed_password(user.password)
-    db_user = User(email=user.email, hash_pass=hashed_pwd)
+    db_user = User(email=user.email, hash_pass=get_hashed_password(user.password))
     session.add(db_user)
     await session.commit()
     await session.refresh(db_user)
@@ -185,23 +563,17 @@ async def login_for_access_token(
     form_data: OAuth2PasswordRequestForm = Depends(),
     session: AsyncSession = Depends(get_session),
 ):
-    statement = select(User).where(User.email == form_data.username)
-    result = await session.execute(statement)
+    result = await session.execute(select(User).where(User.email == form_data.username))
     user = result.scalars().first()
-
     if not user or not verify_password(form_data.password, user.hash_pass):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect email or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
-
-    access_token = create_access_token(data={"sub": user.email})
-    refresh_token = create_refresh_token(data={"sub": user.email})  # Generate Refresh
-
     return {
-        "access_token": access_token,
-        "refresh_token": refresh_token,
+        "access_token": create_access_token(data={"sub": user.email}),
+        "refresh_token": create_refresh_token(data={"sub": user.email}),
         "token_type": "bearer",
     }
 
@@ -215,37 +587,32 @@ async def social_login(
     if x_api_key != API_SECRET_KEY:
         raise HTTPException(status_code=401, detail="Invalid API Key")
 
-    statement = select(User).where(User.email == login_data.email)
-    result = await session.execute(statement)
+    result = await session.execute(select(User).where(User.email == login_data.email))
     user = result.scalars().first()
-
     if not user:
         db_user = User(email=login_data.email, hash_pass="SOCIAL_LOGIN_NO_PASS")
         session.add(db_user)
         await session.commit()
         await session.refresh(db_user)
 
-    access_token_expires = timedelta(minutes=15)
-    access_token = create_access_token(
-        data={"sub": login_data.email}, expires_delta=access_token_expires
-    )
-    refresh_token = create_refresh_token(data={"sub": login_data.email})
     return {
-        "access_token": access_token, 
-        "refresh_token": refresh_token, 
-        "token_type": "bearer"
+        "access_token": create_access_token(
+            data={"sub": login_data.email},
+            expires_delta=timedelta(minutes=15),
+        ),
+        "refresh_token": create_refresh_token(data={"sub": login_data.email}),
+        "token_type": "bearer",
     }
+
 
 @app.post("/refresh", response_model=Token)
 async def refresh_token(
     request: TokenRefreshRequest,
-    session: AsyncSession = Depends(get_session)
+    session: AsyncSession = Depends(get_session),
 ):
     payload = decode_token(request.refresh_token)
-    
     if not payload:
         raise HTTPException(status_code=401, detail="Invalid token")
-        
     if payload.get("type") != "refresh":
         raise HTTPException(status_code=401, detail="Invalid token type")
 
@@ -253,17 +620,204 @@ async def refresh_token(
     if not email:
         raise HTTPException(status_code=401, detail="Invalid token payload")
 
-    statement = select(User).where(User.email == email)
-    result = await session.execute(statement)
-    user = result.scalars().first()
-    if not user:
-         raise HTTPException(status_code=401, detail="User no longer exists")
-
-    new_access_token = create_access_token(data={"sub": email})
-    new_refresh_token = create_refresh_token(data={"sub": email})
+    result = await session.execute(select(User).where(User.email == email))
+    if not result.scalars().first():
+        raise HTTPException(status_code=401, detail="User no longer exists")
 
     return {
-        "access_token": new_access_token, 
-        "refresh_token": new_refresh_token, 
-        "token_type": "bearer"
+        "access_token": create_access_token(data={"sub": email}),
+        "refresh_token": create_refresh_token(data={"sub": email}),
+        "token_type": "bearer",
     }
+
+
+# ── Plants ────────────────────────────────────────────────────────────────────
+
+
+@app.post("/plants/", response_model=PlantRead)
+async def create_plant(
+    plant: PlantCreate,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    db_plant = Plant(**plant.model_dump(), owner_id=current_user.id or 0)
+    session.add(db_plant)
+    await session.commit()
+    await session.refresh(db_plant)
+    return db_plant
+
+
+@app.get("/plants/{plant_id}", response_model=PlantRead)
+async def read_plant(
+    plant_id: int,
+    session: AsyncSession = Depends(get_session),
+):
+    result = await session.execute(
+        select(Plant)
+        .where(Plant.id == plant_id)
+        .options(selectinload(Plant.sensor_readings))  # type: ignore[arg-type]
+    )
+    plant = result.scalars().first()
+    if not plant:
+        raise HTTPException(status_code=404, detail="Plant not found")
+    return plant
+
+
+@app.get("/plants/my_plants", response_model=List[PlantRead])
+async def read_my_plants(
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    result = await session.execute(
+        select(Plant)
+        .where(Plant.owner_id == current_user.id)
+        .options(selectinload(Plant.sensor_readings))  # type: ignore[arg-type]
+    )
+    return result.scalars().all()
+
+
+# ── Sensor readings ───────────────────────────────────────────────────────────
+
+
+@app.post("/plants/{mac_address}/readings/", response_model=SensorReadingRead)
+async def create_sensor_reading(
+    mac_address: str,
+    reading: SensorReadingCreate,
+    session: AsyncSession = Depends(get_session),
+):
+    result = await session.execute(
+        select(Plant).where(Plant.mac_address == mac_address)
+    )
+    plant = result.scalars().first()
+    if not plant:
+        raise HTTPException(status_code=404, detail="Device/Plant not registered")
+
+    db_reading = SensorReading(**reading.model_dump(), plant_id=cast(int, plant.id))
+    session.add(db_reading)
+    await session.commit()
+    await session.refresh(db_reading)
+    return db_reading
+
+
+# ── Image upload (IoT → Backend → Vision Service) ─────────────────────────────
+
+
+@app.post(
+    "/plants/{mac_address}/image/",
+    response_model=ImageUploadResponse,
+    status_code=201,
+    summary="ESP32-CAM image upload",
+    tags=["iot"],
+)
+async def upload_plant_image(
+    mac_address: str,
+    background_tasks: BackgroundTasks,
+    file: UploadFile = File(...),
+    session: AsyncSession = Depends(get_session),
+):
+    """
+    **Device-facing endpoint** — called by the ESP32-CAM firmware.
+
+    1. Looks up the plant by MAC address (404 if not registered).
+    2. Stores the JPEG (GCS or local fallback).
+    3. Creates an Image row immediately.
+    4. Fires a BackgroundTask to:
+       - Call the Vision Microservice (SAM3 + ResNet18)
+       - Optionally call Gemini for a natural-language diagnosis
+    5. Returns HTTP 201 to the device **without waiting** for vision analysis.
+    """
+    # Verify device is registered
+    result = await session.execute(
+        select(Plant).where(Plant.mac_address == mac_address)
+    )
+    plant = result.scalars().first()
+    if not plant:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Device with MAC {mac_address} is not registered to any plant",
+        )
+
+    # Read bytes
+    jpeg_bytes = await file.read()
+    if not jpeg_bytes:
+        raise HTTPException(status_code=400, detail="Empty image payload")
+
+    # Create a stub Image row to get the auto-generated id before storage
+    db_image = Image(
+        plant_id=cast(int, plant.id),
+        image_url="",  # filled in below once we have the id
+    )
+    session.add(db_image)
+    await session.commit()
+    await session.refresh(db_image)
+
+    # Store the image and update the URL
+    image_url = await _store_image(jpeg_bytes, mac_address, cast(int, db_image.id))
+    db_image.image_url = image_url
+    session.add(db_image)
+    await session.commit()
+
+    # Kick off vision + Gemini in the background
+    background_tasks.add_task(
+        _run_vision_and_LLM_inference,
+        image_id=cast(int, db_image.id),
+        jpeg_bytes=jpeg_bytes,
+        plant_id=cast(int, plant.id),
+    )
+
+    return ImageUploadResponse(
+        id=cast(int, db_image.id),
+        image_url=image_url,
+    )
+
+
+# ── Image history & diagnosis ─────────────────────────────────────────────────
+
+
+@app.get(
+    "/plants/{plant_id}/images/",
+    response_model=List[ImageRead],
+    summary="Image history for a plant",
+    tags=["vision"],
+)
+async def get_plant_images(
+    plant_id: int,
+    limit: int = 20,
+    session: AsyncSession = Depends(get_session),
+):
+    """Returns the most recent ``limit`` images with all vision result fields."""
+    result = await session.execute(
+        select(Image)
+        .where(Image.plant_id == plant_id)
+        .order_by(Image.timestamp.desc())  # type: ignore[attr-defined]
+        .limit(limit)
+    )
+    return result.scalars().all()
+
+
+@app.get(
+    "/plants/{plant_id}/diagnosis/",
+    response_model=ImageRead,
+    summary="Latest AI diagnosis for a plant",
+    tags=["vision"],
+)
+async def get_latest_diagnosis(
+    plant_id: int,
+    session: AsyncSession = Depends(get_session),
+):
+    """
+    Returns the most recent Image row with full vision and Gemini results.
+    If the background task has not finished yet, vision fields will be null —
+    the client should poll this endpoint until ``vision_error`` is null and
+    ``detected_health`` is populated.
+    """
+    result = await session.execute(
+        select(Image)
+        .where(Image.plant_id == plant_id)
+        .order_by(Image.timestamp.desc())  # type: ignore[attr-defined]
+        .limit(1)
+    )
+    img = result.scalars().first()
+    if not img:
+        raise HTTPException(status_code=404, detail="No images found for this plant")
+    return img

@@ -14,14 +14,20 @@ services:
 
   backend:
     build: ./backend
+    container_name: plantvita_backend
+    restart: always
     volumes:
       - ./backend:/app/backend
     working_dir: /app/backend
-    command: uvicorn main:app --host 0.0.0.0 --port 8000
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
     ports:
       - "${SERVER_PORT}:8000"
     env_file:
       - .env
+    environment:
+      VISION_SERVICE_URL: ${VISION_SERVICE_URL:-http://host.docker.internal:8001}
+      VISION_INFERENCE_KEY: ${VISION_INFERENCE_KEY:-}
+      VISION_TIMEOUT: ${VISION_TIMEOUT:-60}
     depends_on:
       - db
 

@@ -1,0 +1,3 @@
+[submodule "processing_service"]
+	path = processing_service
+	url = https://github.com/Guri536/Plant-Vita-Vision.git

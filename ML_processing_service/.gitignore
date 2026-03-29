@@ -1,8 +1,0 @@
-.models
-.env
-venv/
-.vscode\
-venv
-.vscode
-__pycache__
-

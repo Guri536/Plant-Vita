@@ -1,7 +1,20 @@
+"""
+schemas.py  (updated)
+─────────────────────
+Pydantic / SQLModel response schemas.
+
+Changes vs original:
+  • ImageRead — full read schema including all vision result fields
+  • ImageUploadResponse — what the POST /plants/{mac}/image/ endpoint returns
+    immediately (before the background task finishes)
+"""
+
 from pydantic import BaseModel, EmailStr
 from typing import Optional, List
 from datetime import datetime
 
+
+# ── Sensor readings ────────────────────────────────────────────────────────────
 
 class SensorReadingCreate(BaseModel):
     soil_moisture: float
@@ -17,6 +30,8 @@ class SensorReadingRead(SensorReadingCreate):
     timestamp: datetime
 
 
+# ── Plant ──────────────────────────────────────────────────────────────────────
+
 class PlantCreate(BaseModel):
     name: str
     species: str
@@ -29,6 +44,8 @@ class PlantRead(PlantCreate):
     id: int
     sensor_readings: List[SensorReadingRead] = []
 
+
+# ── Auth ───────────────────────────────────────────────────────────────────────
 
 class Token(BaseModel):
     access_token: str
@@ -44,6 +61,8 @@ class TokenRefreshRequest(BaseModel):
     refresh_token: str
 
 
+# ── User ───────────────────────────────────────────────────────────────────────
+
 class UserBase(BaseModel):
     email: EmailStr
 
@@ -58,3 +77,47 @@ class UserRead(UserBase):
 
 class SocialLogin(BaseModel):
     email: str
+
+
+# ── Image ──────────────────────────────────────────────────────────────────────
+
+class ImageRead(BaseModel):
+    """
+    Full image record — all vision microservice fields included.
+    Returned by GET /plants/{id}/images/ and GET /plants/{id}/diagnosis/.
+    """
+    id: int
+    plant_id: int
+    timestamp: datetime
+    image_url: str
+
+    # Gemini diagnosis
+    ai_diagnosis: Optional[str] = None
+
+    # Vision microservice results
+    green_density:        Optional[float] = None
+    segmentation_success: Optional[bool]  = None
+
+    detected_species:   Optional[str]   = None
+    species_confidence: Optional[float] = None
+    in_model_scope:     Optional[bool]  = None
+
+    detected_health:   Optional[str]   = None
+    health_confidence: Optional[float] = None
+
+    trigger_llm:  Optional[bool] = None
+    vision_error: Optional[str]  = None
+
+    class Config:
+        from_attributes = True
+
+
+class ImageUploadResponse(BaseModel):
+    """
+    Returned immediately when the ESP32-CAM posts a new image.
+    The vision + Gemini analysis runs in a BackgroundTask and updates the DB
+    row after this response is already sent.
+    """
+    id: int
+    image_url: str
+    message: str = "Image received. Vision analysis running in background."

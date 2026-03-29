@@ -8,3 +8,6 @@ passlib[bcrypt]
 python-jose[cryptography]
 python-multipart
 email-validator
+httpx
+aiofiles
+openai
