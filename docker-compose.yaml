@@ -28,6 +28,10 @@ services:
       VISION_SERVICE_URL: ${VISION_SERVICE_URL:-http://host.docker.internal:8001}
       VISION_INFERENCE_KEY: ${VISION_INFERENCE_KEY:-}
       VISION_TIMEOUT: ${VISION_TIMEOUT:-60}
+      PYTHONUNBUFFERED: 1
+      PYTHONIOENCODING: UTF-8
+    tty: true
+    stdin_open: true
     depends_on:
       - db
 

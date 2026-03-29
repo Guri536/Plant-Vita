@@ -33,6 +33,7 @@ from fastapi import (
     HTTPException,
     UploadFile,
     status,
+    Form
 )
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
@@ -191,6 +192,7 @@ async def _run_vision_and_LLM_inference(
     image_id: int,
     jpeg_bytes: bytes,
     plant_id: int,
+    force_universal: bool = False,
 ) -> None:
     """
     BackgroundTask: calls Vision Microservice → writes results → optional Gemini call.
@@ -211,7 +213,7 @@ async def _run_vision_and_LLM_inference(
 
     # ── 1. Call Vision Microservice ───────────────────────────────────────────
     vision = await call_vision_service(
-        jpeg_bytes, filename=f"plant_{plant_id}.jpg", plant_species=plant.species
+        jpeg_bytes, filename=f"plant_{plant_id}.jpg", plant_species=plant.species, force_universal=force_universal
     )
 
     # ── 2. Persist vision fields ──────────────────────────────────────────────
@@ -353,7 +355,7 @@ async def _call_openrouter(
         # Get plant details
         plant_result = await session.execute(select(Plant).where(Plant.id == plant_id))
         plant = plant_result.scalars().first()
-        plant_name = plant.species if plant and plant.species else "Unknown Plant"
+        plant_species = plant.species if plant and plant.species else "Unknown Plant"
 
         # Get latest sensor reading
         sensor_result = await session.execute(
@@ -402,7 +404,7 @@ async def _call_openrouter(
 Analyze the provided plant image alongside its environmental sensor data and medical history to provide a highly accurate diagnosis.
 
 ### 📊 Contextual Data
-* **Plant Species:** {plant_name}
+* **Plant Species:** {plant_species}
 * **Current Sensor Readings:** Temperature: {temp} | Soil Moisture: {moisture} | Ambient Humidity: {humidity} | Light: {lux}
 * **Vision AI Pre-scan:** {pre_scan}
 * **Past Diagnostic History:** {past_history}
@@ -713,6 +715,7 @@ async def upload_plant_image(
     mac_address: str,
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
+    force_universal: bool = Form(False),
     session: AsyncSession = Depends(get_session),
 ):
     """
@@ -763,6 +766,7 @@ async def upload_plant_image(
         image_id=cast(int, db_image.id),
         jpeg_bytes=jpeg_bytes,
         plant_id=cast(int, plant.id),
+        force_universal=force_universal
     )
 
     return ImageUploadResponse(

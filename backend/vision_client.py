@@ -59,6 +59,7 @@ async def call_vision_service(
     jpeg_bytes: bytes,
     plant_species: Optional[str],
     filename: str = "image.jpg",
+    force_universal: bool = False
 ) -> dict:
     """
     POST ``jpeg_bytes`` to ``POST {VISION_SERVICE_URL}/analyze``.
@@ -79,7 +80,7 @@ async def call_vision_service(
 
     ENDPOINT_URL = "analyze/targeted"
 
-    if plant_species is None:
+    if plant_species is None or force_universal:
         ENDPOINT_URL = "analyze"
 
     try:
@@ -88,7 +89,7 @@ async def call_vision_service(
                 f"{_BASE_URL}/{ENDPOINT_URL}",
                 headers=headers,
                 files={"file": (filename, jpeg_bytes, "image/jpeg")},
-                data={"plant_name": plant_species},
+                data={"plant_species": plant_species, "force_universal": str(force_universal).lower()},
             )
             response.raise_for_status()
             result: dict = response.json()
