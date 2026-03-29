@@ -11,7 +11,7 @@ Changes vs original:
 
 from pydantic import BaseModel, EmailStr
 from typing import Optional, List
-from datetime import datetime
+from datetime import datetime, date
 
 
 # ── Sensor readings ────────────────────────────────────────────────────────────
@@ -34,15 +34,35 @@ class SensorReadingRead(SensorReadingCreate):
 
 class PlantCreate(BaseModel):
     name: str
-    species: str
+    species: Optional[str] = None
     mac_address: str
     moisture_threshold_min: int = 20
     moisture_threshold_max: int = 80
-
+    soil_type: Optional[str] = None
+    capture_rate: Optional[int] = 30
+    capture_schedule: Optional[str] = "morning"
+    notifications_enabled: bool = True
+    alerts_enabled: bool = True
+    indoor: Optional[bool] = True
+    light_condition: Optional[str] = None
+    date_acquired: Optional[date] = None
+    notes: Optional[str] = None
+    watering_mode: Optional[str] = "manual"
+    pump_duration: Optional[int] = 5
 
 class PlantRead(PlantCreate):
     id: int
+    owner_id: int
     sensor_readings: List[SensorReadingRead] = []
+
+class DeviceRegister(BaseModel):
+    mac_address: str
+    email: str
+
+class DeviceRegisterResponse(BaseModel):
+    registered: bool
+    is_new: bool
+    plant_id: int
 
 
 # ── Auth ───────────────────────────────────────────────────────────────────────

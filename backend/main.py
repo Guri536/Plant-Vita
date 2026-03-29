@@ -66,6 +66,8 @@ from schemas import (
     TokenRefreshRequest,
     UserCreate,
     UserRead,
+    DeviceRegister, 
+    DeviceRegisterResponse
 )
 from vision_client import call_vision_service, check_vision_health
 
@@ -677,6 +679,51 @@ async def read_my_plants(
     )
     return result.scalars().all()
 
+@app.post("/devices/register", response_model=DeviceRegisterResponse)
+async def register_device(
+    payload: DeviceRegister,
+    session: AsyncSession = Depends(get_session),
+):
+    # 1. Find user by email
+    user_result = await session.execute(select(User).where(User.email == payload.email))
+    user = user_result.scalars().first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # 2. Check if device already exists
+    plant_result = await session.execute(
+        select(Plant).where(Plant.mac_address == payload.mac_address)
+    )
+    existing_plant = plant_result.scalars().first()
+
+    if existing_plant:
+        # Transfer ownership
+        existing_plant.owner_id = cast(int, user.id)
+        await session.commit()
+        await session.refresh(existing_plant)
+        return {"registered": True, "is_new": False, "plant_id": existing_plant.id}
+
+    # 3. Auto-increment plant name per user
+    user_plants_result = await session.execute(
+        select(Plant).where(Plant.owner_id == cast(int, user.id))
+    )
+    user_plants = user_plants_result.scalars().all()
+    plant_number = str(len(user_plants) + 1).zfill(2)
+    plant_name = f"Plant {plant_number}"
+
+    # 4. Create new plant
+    new_plant = Plant(
+        owner_id=cast(int, user.id),
+        mac_address=payload.mac_address,
+        name=plant_name,
+        moisture_threshold_min=20,
+        moisture_threshold_max=80,
+    )
+    session.add(new_plant)
+    await session.commit()
+    await session.refresh(new_plant)
+
+    return {"registered": True, "is_new": True, "plant_id": cast(int, new_plant.id)}
 
 # ── Sensor readings ───────────────────────────────────────────────────────────
 

@@ -11,7 +11,7 @@ Changes vs original:
 """
 
 from typing import Optional, List
-from datetime import datetime
+from datetime import datetime, timezone, date
 from sqlmodel import Field, SQLModel, Relationship
 
 
@@ -28,9 +28,21 @@ class Plant(SQLModel, table=True):
     owner_id: int = Field(foreign_key="user.id")
     mac_address: str = Field(unique=True, index=True)
     name: str
-    species: str
     moisture_threshold_min: int
     moisture_threshold_max: int
+    
+    soil_type: Optional[str] = Field(default=None)
+    capture_rate: Optional[int] = Field(default=30)  # minutes
+    capture_schedule: Optional[str] = Field(default="morning")
+    notifications_enabled: bool = Field(default=True)
+    alerts_enabled: bool = Field(default=True)
+    indoor: Optional[bool] = Field(default=True)
+    light_condition: Optional[str] = Field(default=None)
+    date_acquired: Optional[date] = Field(default=None)
+    notes: Optional[str] = Field(default=None)
+    watering_mode: Optional[str] = Field(default="manual")
+    pump_duration: Optional[int] = Field(default=5)  # seconds
+    species: Optional[str] = Field(default=None)
 
     owner: "User" = Relationship(back_populates="plants")
     sensor_readings: List["SensorReading"] = Relationship(
