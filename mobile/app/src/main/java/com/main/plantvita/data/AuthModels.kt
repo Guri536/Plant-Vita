@@ -13,9 +13,3 @@ data class LoginRequest(
 data class SocialLoginRequest(
     val email: String
 )
-
-data class TokenResponse(
-    val accessToken: String,
-    val refreshToken: String,
-    val tokenType: String
-)

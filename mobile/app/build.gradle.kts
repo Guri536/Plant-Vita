@@ -53,6 +53,7 @@ dependencies {
     implementation(libs.androidx.compose.material.icons.extended)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.navigation.compose)
+    implementation(libs.androidx.compose.runtime)
 
     // For tests
     testImplementation(libs.junit)
@@ -71,5 +72,5 @@ dependencies {
     implementation(libs.androidx.datastore.preferences)
 
     // Google Sign-In
-    implementation(libs.play.services.auth)
+    implementation(libs.play.services.auth.v2120)
 }
