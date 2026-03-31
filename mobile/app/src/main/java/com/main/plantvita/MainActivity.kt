@@ -1,5 +1,7 @@
 package com.main.plantvita
 
+import android.content.Context
+import android.net.ConnectivityManager
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -18,9 +20,14 @@ import com.main.plantvita.viewmodel.AuthViewModel
 import java.util.concurrent.TimeUnit
 
 class MainActivity : ComponentActivity() {
+    private var networkCallback: ConnectivityManager.NetworkCallback? = null
+
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+
+        networkCallback = bindToWifiNetwork(this)
 
         val workRequest = PeriodicWorkRequestBuilder<HealthCheckWorker>(15, TimeUnit.MINUTES)
             .setConstraints(
@@ -37,10 +44,17 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             PlantVitaTheme {
-                bindToWifiNetwork(this)
                 val viewModel: AuthViewModel = viewModel()
                 AppNavigation(viewModel = viewModel)
             }
         }
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        // Crucial: Clean up the callback to prevent memory leaks
+        val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        networkCallback?.let { cm.unregisterNetworkCallback(it) }
+        cm.bindProcessToNetwork(null)
     }
 }

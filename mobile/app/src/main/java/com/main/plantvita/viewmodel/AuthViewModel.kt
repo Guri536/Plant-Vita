@@ -35,7 +35,13 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
                 session.saveSession(response.accessToken, response.refreshToken, email)
                 _authState.value = AuthState.Success
             } catch (e: Exception) {
-                _authState.value = AuthState.Error(e.message ?: "Login failed")
+                val errorMsg = when {
+                    e is java.net.ConnectException -> "Cannot reach Laptop Server. Check IP/Hotspot."
+                    e is java.net.SocketTimeoutException -> "Server timed out."
+                    e.message?.contains("401") == true -> "Invalid email or password."
+                    else -> e.message ?: "Login failed"
+                }
+                _authState.value = AuthState.Error(errorMsg)
             }
         }
     }

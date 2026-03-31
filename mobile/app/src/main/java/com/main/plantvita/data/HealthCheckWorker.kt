@@ -2,6 +2,7 @@ package com.main.plantvita.data
 
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.PendingIntent
 import android.content.Context
 import android.util.Log
 import androidx.core.app.NotificationCompat
@@ -39,11 +40,22 @@ class HealthCheckWorker(
             NotificationChannel("plant_alerts", "Plant Alerts", NotificationManager.IMPORTANCE_HIGH)
         manager.createNotificationChannel(channel)
 
+        val intent = applicationContext.packageManager
+            .getLaunchIntentForPackage(applicationContext.packageName)
+
+        val pendingIntent = PendingIntent.getActivity(
+            applicationContext,
+            0,
+            intent,
+            PendingIntent.FLAG_IMMUTABLE
+        )
+
         val notification = NotificationCompat.Builder(applicationContext, "plant_alerts")
             .setSmallIcon(R.drawable.logo)
             .setContentTitle(title)
             .setContentText(message)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setContentIntent(pendingIntent) // Add this
             .setAutoCancel(true)
             .build()
 

@@ -118,8 +118,11 @@ class ProvisioningModel(application: Application): AndroidViewModel(application)
     }
 
     fun registerDevice(macAddress: String, email: String) {
+        unbindNetwork()
+
         viewModelScope.launch {
             try {
+                // Give the OS a tiny moment to switch back to the Laptop Hotspot (General WiFi binding)
                 api.registerDevice(DeviceRegisterRequest(macAddress, email))
             } catch (e: Exception) {
                 Log.e("Provisioning", "Device registration failed: ${e.message}")

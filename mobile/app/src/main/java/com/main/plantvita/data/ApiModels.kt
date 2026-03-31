@@ -32,3 +32,8 @@ data class DeviceRegisterResponse(
     @SerializedName("is_new") val isNew: Boolean,
     @SerializedName("plant_id") val plantId: Int
 )
+
+data class PlantStatus(
+    @SerializedName("is_critical") val isCritical: Boolean,
+    val message: String
+)
