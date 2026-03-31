@@ -1,4 +1,4 @@
-package com.main.plantvita.data
+package com.main.plantvita.navigation
 
 import androidx.compose.runtime.Composable
 import androidx.navigation.compose.NavHost
@@ -6,7 +6,6 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.main.plantvita.screen.AddDeviceScreen
 import com.main.plantvita.screen.AuthScreen
-import com.main.plantvita.screen.DashboardScreen
 import com.main.plantvita.screen.HomeScreen
 import com.main.plantvita.screen.ProfileScreen
 import com.main.plantvita.viewmodel.AuthViewModel
@@ -54,6 +53,7 @@ fun AppNavigation(viewModel: AuthViewModel) {
 
         composable("profile") {
             ProfileScreen(
+                email = viewModel.getEmail(),
                 onLogout = {
                     viewModel.logout()
                     navController.navigate("auth") {

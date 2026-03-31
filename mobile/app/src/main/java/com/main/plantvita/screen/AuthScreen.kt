@@ -1,5 +1,6 @@
 package com.main.plantvita.screen
 
+import android.util.Log
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
@@ -53,6 +54,7 @@ import androidx.compose.ui.unit.dp
 import com.main.plantvita.R
 import com.main.plantvita.viewmodel.AuthState
 import com.main.plantvita.viewmodel.AuthViewModel
+import com.main.plantvita.viewmodel.ProvisioningUiState
 
 @Composable
 fun AuthScreen(
@@ -191,7 +193,7 @@ fun AuthScreen(
 
         // Error Message
         if (authState is AuthState.Error) {
-            println("Auth: ${(authState as AuthState.Error).message}")
+            Log.d("PlantVita", "Auth error: ${(authState as AuthState.Error).message}")
             Text(
                 text = (authState as AuthState.Error).message,
                 color = MaterialTheme.colorScheme.error,

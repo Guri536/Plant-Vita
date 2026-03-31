@@ -21,4 +21,5 @@ interface ApiService {
 
     @POST("devices/register")
     suspend fun registerDevice(@Body body: DeviceRegisterRequest): DeviceRegisterResponse
+    fun getPlantStatus()
 }

@@ -1,10 +1,6 @@
-package com.main.plantvita.data
+package com.main.plantvita.network
 
 import android.content.Context
-import android.net.ConnectivityManager
-import android.net.wifi.WifiManager
-import android.os.Build
-import java.net.Inet4Address
 
 object NetworkConfig {
 

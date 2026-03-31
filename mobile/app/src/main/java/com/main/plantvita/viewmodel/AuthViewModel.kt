@@ -5,10 +5,11 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.application
 import androidx.lifecycle.viewModelScope
 import com.main.plantvita.data.RegisterRequest
-import com.main.plantvita.data.RetrofitClient
+import com.main.plantvita.network.RetrofitClient
 import com.main.plantvita.data.SessionManager
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 sealed class AuthState {
@@ -39,7 +40,7 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun logout() {
+    suspend fun logout() {
         session.clearSession()
         RetrofitClient.reset() // Force URL re-resolution on next login
         _authState.value = AuthState.Idle
@@ -58,5 +59,7 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun isLoggedIn() = session.isLoggedIn()
+    fun getEmail() = session.email
+
+    fun isLoggedIn() = session.isLoggedIn
 }

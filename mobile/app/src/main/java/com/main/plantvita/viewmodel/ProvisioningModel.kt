@@ -12,9 +12,13 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.application
 import androidx.lifecycle.viewModelScope
+import com.main.plantvita.data.ApiService
+import com.main.plantvita.data.DeviceRegisterRequest
 import com.main.plantvita.data.ESP32Service
 import com.main.plantvita.data.WiFiNetwork
+import com.main.plantvita.network.RetrofitClient
 import kotlinx.coroutines.launch
 
 sealed interface ProvisioningUiState {
@@ -29,6 +33,8 @@ class ProvisioningModel(application: Application): AndroidViewModel(application)
     private val service: ESP32Service = ESP32Service.create()
     private val connectivityManager = application.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
+
+    private val api get() = RetrofitClient.getInstance(application)
 
     var uiState: ProvisioningUiState by mutableStateOf(ProvisioningUiState.Idle)
         private set
@@ -68,18 +74,20 @@ class ProvisioningModel(application: Application): AndroidViewModel(application)
 
     fun sendWiFiCredentials(ssid: String, pass: String) {
         uiState = ProvisioningUiState.Loading
-
         viewModelScope.launch {
             try {
                 service.saveCredentialsToDevice(ssid, pass)
                 uiState = ProvisioningUiState.SaveSuccess
                 unbindNetwork()
             } catch (e: Exception) {
-                uiState = ProvisioningUiState.SaveSuccess
+                uiState = ProvisioningUiState.Error(
+                    "Failed to send credentials: ${e.message ?: "Unknown error"}"
+                )
                 unbindNetwork()
             }
         }
     }
+
 
     fun scanNetworks() {
         uiState = ProvisioningUiState.Loading
@@ -107,6 +115,16 @@ class ProvisioningModel(application: Application): AndroidViewModel(application)
 
     fun resetState(){
         uiState = ProvisioningUiState.Idle
+    }
+
+    fun registerDevice(macAddress: String, email: String) {
+        viewModelScope.launch {
+            try {
+                api.registerDevice(DeviceRegisterRequest(macAddress, email))
+            } catch (e: Exception) {
+                Log.e("Provisioning", "Device registration failed: ${e.message}")
+            }
+        }
     }
 
     override fun onCleared() {

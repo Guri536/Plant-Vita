@@ -6,8 +6,11 @@ plugins {
 
 android {
     namespace = "com.main.plantvita"
-    compileSdk {
-        version = release(36)
+    compileSdk = 36
+
+    buildFeatures {
+        compose = true
+        buildConfig = true
     }
 
     defaultConfig {
@@ -54,6 +57,7 @@ dependencies {
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.navigation.compose)
     implementation(libs.androidx.compose.runtime)
+    implementation(libs.androidx.work.runtime.ktx)
 
     // For tests
     testImplementation(libs.junit)

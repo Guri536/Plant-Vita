@@ -1,23 +1,42 @@
 package com.main.plantvita.data
 
 import android.content.Context
-import androidx.core.content.edit
+import androidx.datastore.preferences.core.*
+import androidx.datastore.preferences.preferencesDataStore
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
 
-class SessionManager(context: Context) {
-    private val prefs = context.getSharedPreferences("plantvita_session", Context.MODE_PRIVATE)
+val Context.dataStore by preferencesDataStore(name = "plantvita_session")
 
-    fun saveSession(accessToken: String, refreshToken: String, email: String) {
-        prefs.edit {
-            putString("access_token", accessToken)
-                .putString("refresh_token", refreshToken)
-                .putString("email", email)
+class SessionManager(private val context: Context) {
+
+    companion object {
+        val ACCESS_TOKEN = stringPreferencesKey("access_token")
+        val REFRESH_TOKEN = stringPreferencesKey("refresh_token")
+        val EMAIL = stringPreferencesKey("email")
+    }
+
+    suspend fun saveSession(accessToken: String, refreshToken: String, email: String) {
+        context.dataStore.edit { prefs ->
+            prefs[ACCESS_TOKEN] = accessToken
+            prefs[REFRESH_TOKEN] = refreshToken
+            prefs[EMAIL] = email
         }
     }
 
-    fun getAccessToken(): String? = prefs.getString("access_token", null)
-    fun getRefreshToken(): String? = prefs.getString("refresh_token", null)
-    fun getEmail(): String? = prefs.getString("email", null)
-    fun isLoggedIn(): Boolean = getAccessToken() != null
+    val accessToken: Flow<String?> = context.dataStore.data
+        .map { it[ACCESS_TOKEN] }
 
-    fun clearSession() = prefs.edit { clear() }
+    val refreshToken: Flow<String?> = context.dataStore.data
+        .map { it[REFRESH_TOKEN] }
+
+    val email: Flow<String?> = context.dataStore.data
+        .map { it[EMAIL] }
+
+    val isLoggedIn: Flow<Boolean> = context.dataStore.data
+        .map { it[ACCESS_TOKEN] != null }
+
+    suspend fun clearSession() {
+        context.dataStore.edit { it.clear() }
+    }
 }
