@@ -12,23 +12,26 @@ Changes vs original:
 from pydantic import BaseModel, EmailStr
 from typing import Optional, List
 from datetime import datetime, date
+from typing import Optional, List
 
 
 # ── Sensor readings ────────────────────────────────────────────────────────────
 
 class SensorReadingCreate(BaseModel):
-    soil_moisture: float
-    temperature: float
-    humidity: float
+    temp_c: float
+    humidity_pct: float
     light_lux: float
-    air_quality: Optional[float] = None
+    air_ppm: float
+    air_quality_pct: Optional[float] = None
+    soil_surface_pct: float
+    soil_root_pct: float
+    soil_temp_c: float
 
 
 class SensorReadingRead(SensorReadingCreate):
     id: int
     plant_id: int
     timestamp: datetime
-
 
 # ── Plant ──────────────────────────────────────────────────────────────────────
 

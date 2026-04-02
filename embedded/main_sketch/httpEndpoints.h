@@ -20,16 +20,17 @@ void scanWifiNetworks() {
 }
 
 void saveWifiCreds() {
-  if (server.hasArg("ssid") && server.hasArg("pass")) {
+  if (server.hasArg("ssid") && server.hasArg("pass") && server.hasArg("email")) {
     String ssid = server.arg("ssid");
     String pass = server.arg("pass");
+    String email = server.arg("email");
 
-    Serial.println("Received WiFi Credentials!");
-    setWifiCreds(ssid, pass); 
+    Serial.println("Received WiFi Credentials and Email!");
+    setDeviceConfig(ssid, pass, email); 
     server.send(200, "application/json", "{\"status\":\"saved\"}");
     gotWifiCreds = true;
   } else {
-    server.send(200, "application/json", "{\"status\":\"error\"}");
+    server.send(400, "application/json", "{\"status\":\"error\", \"message\":\"Missing parameters\"}");
   }
 }
 

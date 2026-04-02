@@ -10,22 +10,24 @@ Changes vs original:
     break reads.
 """
 
-from typing import Optional, List
-from datetime import datetime, timezone, date
+from typing import Optional, List, Any
+from datetime import datetime, timezone, date, UTC
 from sqlmodel import Field, SQLModel, Relationship
-
+from sqlalchemy import Column, DateTime
 
 class User(SQLModel, table=True):
-    id: Optional[int] = Field(default=None, primary_key=True)
-    email: str = Field(index=True, unique=True)
-    hash_pass: str
+  __tablename__: Any = "users"
+  
+  id: Optional[int] = Field(default=None, primary_key=True)
+  email: str = Field(index=True, unique=True)
+  hash_pass: str
 
-    plants: List["Plant"] = Relationship(back_populates="owner")
+  plants: List["Plant"] = Relationship(back_populates="owner")
 
 
 class Plant(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
-    owner_id: int = Field(foreign_key="user.id")
+    owner_id: int = Field(foreign_key="users.id")
     mac_address: str = Field(unique=True, index=True)
     name: str
     moisture_threshold_min: int
@@ -58,13 +60,19 @@ class Plant(SQLModel, table=True):
 class SensorReading(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     plant_id: int = Field(foreign_key="plant.id")
-    timestamp: datetime = Field(default_factory=datetime.utcnow, index=True)
+    timestamp: datetime = Field(
+        default_factory=lambda: datetime.now(UTC),
+        sa_column=Column(DateTime(timezone=True), index=True, nullable=False)
+    )
 
-    soil_moisture: float
-    temperature: float
-    humidity: float
+    temp_c: float
+    humidity_pct: float
     light_lux: float
-    air_quality: Optional[float] = None
+    air_ppm: float
+    air_quality_pct: Optional[float] = None
+    soil_surface_pct: float
+    soil_root_pct: float
+    soil_temp_c: float
 
     plant: "Plant" = Relationship(back_populates="sensor_readings")
 
@@ -94,7 +102,10 @@ class Image(SQLModel, table=True):
     plant_id: int = Field(foreign_key="plant.id")
 
     # ── Set at upload time ────────────────────────────────────────────────
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(
+        default_factory=lambda: datetime.now(UTC),
+        sa_column=Column(DateTime(timezone=True), index=True, nullable=False)
+    )
     image_url: str
 
     # ── Set by Gemini background task (unchanged from original) ───────────

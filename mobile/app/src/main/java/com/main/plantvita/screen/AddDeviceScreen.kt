@@ -41,6 +41,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.main.plantvita.data.SessionManager
 import com.main.plantvita.data.WiFiNetwork
 import com.main.plantvita.viewmodel.ProvisioningModel
 import com.main.plantvita.viewmodel.ProvisioningUiState
@@ -53,7 +54,6 @@ fun AddDeviceScreen(
 ) {
     val uiState = viewModel.uiState
     var showPassDialog by remember { mutableStateOf<WiFiNetwork?>(null) }
-
 
     if (showPassDialog != null) {
         WiFiPassDialog(

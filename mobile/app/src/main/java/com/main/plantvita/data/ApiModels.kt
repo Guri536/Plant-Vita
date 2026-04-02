@@ -37,3 +37,8 @@ data class PlantStatus(
     @SerializedName("is_critical") val isCritical: Boolean,
     val message: String
 )
+
+data class ProvisioningResponse(
+    val status: String,
+    val message: String? = null
+)

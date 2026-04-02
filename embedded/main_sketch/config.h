@@ -58,8 +58,8 @@ extern DallasTemperature ds18b20;
 #define SENSOR_READ_TIME 5000
 
 // Server Target 
-#define SERVER_PORT 8888
-#define SERVER_ENDPOINT "/data"
+#define SERVER_PORT 8000
+#define SERVER_ENDPOINT "/plants/%s/readings/"
 #define IMAGE_ENDPOINT "/plants/%s/image/"
 
 // ESP32-CAM UART link

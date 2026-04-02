@@ -36,7 +36,7 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
                 _authState.value = AuthState.Success
             } catch (e: Exception) {
                 val errorMsg = when {
-                    e is java.net.ConnectException -> "Cannot reach Laptop Server. Check IP/Hotspot."
+                    e is java.net.ConnectException -> "Cannot reach Server. Check IP/Hotspot."
                     e is java.net.SocketTimeoutException -> "Server timed out."
                     e.message?.contains("401") == true -> "Invalid email or password."
                     else -> e.message ?: "Login failed"

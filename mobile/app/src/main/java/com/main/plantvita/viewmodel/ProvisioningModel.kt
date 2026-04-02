@@ -11,14 +11,14 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
-import androidx.lifecycle.ViewModel
 import androidx.lifecycle.application
 import androidx.lifecycle.viewModelScope
-import com.main.plantvita.data.ApiService
 import com.main.plantvita.data.DeviceRegisterRequest
 import com.main.plantvita.data.ESP32Service
+import com.main.plantvita.data.SessionManager
 import com.main.plantvita.data.WiFiNetwork
 import com.main.plantvita.network.RetrofitClient
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 sealed interface ProvisioningUiState {
@@ -29,9 +29,10 @@ sealed interface ProvisioningUiState {
     object SaveSuccess : ProvisioningUiState
 }
 
-class ProvisioningModel(application: Application): AndroidViewModel(application) {
+class ProvisioningModel(application: Application) : AndroidViewModel(application) {
     private val service: ESP32Service = ESP32Service.create()
-    private val connectivityManager = application.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+    private val connectivityManager =
+        application.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
 
     private val api get() = RetrofitClient.getInstance(application)
@@ -39,7 +40,7 @@ class ProvisioningModel(application: Application): AndroidViewModel(application)
     var uiState: ProvisioningUiState by mutableStateOf(ProvisioningUiState.Idle)
         private set
 
-    fun bindToNetwork(){
+    fun bindToNetwork() {
         uiState = ProvisioningUiState.Loading
 
         val request = NetworkRequest.Builder()
@@ -47,14 +48,14 @@ class ProvisioningModel(application: Application): AndroidViewModel(application)
             .removeCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
             .build()
 
-        networkCallback = object : ConnectivityManager.NetworkCallback(){
+        networkCallback = object : ConnectivityManager.NetworkCallback() {
             override fun onAvailable(network: Network) {
                 super.onAvailable(network)
                 try {
                     connectivityManager.bindProcessToNetwork(network)
                     Log.d("Provisioning", "Bound process to WiFi Network: $network")
                     scanNetworks()
-                } catch (e: Exception){
+                } catch (e: Exception) {
                     uiState = ProvisioningUiState.Error("Failed to bind to network: ${e.message}")
                 }
             }
@@ -66,7 +67,8 @@ class ProvisioningModel(application: Application): AndroidViewModel(application)
 
             override fun onUnavailable() {
                 super.onUnavailable()
-                uiState = ProvisioningUiState.Error("Please connect to 'Plant-Vita-Setup' WiFi manually.")
+                uiState =
+                    ProvisioningUiState.Error("Please connect to 'Plant-Vita-Setup' WiFi manually.")
             }
         }
         connectivityManager.requestNetwork(request, networkCallback!!, 5000)
@@ -74,12 +76,19 @@ class ProvisioningModel(application: Application): AndroidViewModel(application)
 
     fun sendWiFiCredentials(ssid: String, pass: String) {
         uiState = ProvisioningUiState.Loading
+        val session = SessionManager(application.applicationContext)
+
         viewModelScope.launch {
             try {
-                service.saveCredentialsToDevice(ssid, pass)
-                uiState = ProvisioningUiState.SaveSuccess
-                unbindNetwork()
+                val res = service.saveCredentialsToDevice(ssid, pass, email = session.email.first()!!)
+                if (res.status == "saved") {
+                    uiState = ProvisioningUiState.SaveSuccess
+                    unbindNetwork()
+                } else {
+                    uiState = ProvisioningUiState.Error("Error: Unable to send credentials to the device")
+                }
             } catch (e: Exception) {
+                Log.d("Provisioning", e.message ?: "Error while sending creds")
                 uiState = ProvisioningUiState.Error(
                     "Failed to send credentials: ${e.message ?: "Unknown error"}"
                 )
@@ -98,7 +107,9 @@ class ProvisioningModel(application: Application): AndroidViewModel(application)
                 val validNetworks = networks.filter { it.ssid.isNotEmpty() }
                 uiState = ProvisioningUiState.ScanSuccess(validNetworks)
             } catch (e: Exception) {
-                uiState = ProvisioningUiState.Error("Failed to connect to device. Make sure you are connected to the device's WiFi.")
+                Log.d("Provisioning", e.message ?: "Error in scanning for networks")
+                uiState =
+                    ProvisioningUiState.Error("Failed to connect to device. Make sure you are connected to the device's WiFi.")
             }
         }
     }
@@ -113,7 +124,7 @@ class ProvisioningModel(application: Application): AndroidViewModel(application)
         }
     }
 
-    fun resetState(){
+    fun resetState() {
         uiState = ProvisioningUiState.Idle
     }
 

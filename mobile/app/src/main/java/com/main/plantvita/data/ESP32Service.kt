@@ -20,8 +20,9 @@ interface ESP32Service{
     @POST("save")
     suspend fun saveCredentialsToDevice(
         @Field("ssid") ssid: String,
-        @Field("pass") pass: String
-    ): String
+        @Field("pass") pass: String,
+        @Field("email") email: String
+    ): ProvisioningResponse
 
     companion object{
         private const val BASEURL = "http://192.168.4.1/"

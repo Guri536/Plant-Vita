@@ -76,7 +76,10 @@ void setup() {
   pref.begin("wifi-creds", true);
   String ssid = pref.getString("ssid", "");
   String pass = pref.getString("pass", "");
+  String email = pref.getString("email", "");
   pref.end();
+
+  printPrefs();
 
   if (!SPIFFS.begin(true)) {
     Serial.println("SPIFFS mount failed");
@@ -133,6 +136,36 @@ void setup() {
     showStatus("ONLINE", "", TFT_GREEN);
     showLogo(66, 50);
     digitalWrite(GREEN_LED_PIN, PIN_LED_ON);
+
+    if (email != "") {
+      HTTPClient http;
+      String macStr = WiFi.macAddress();
+      macStr.replace(":", "");
+      
+      String regUrl = "http://" + getServerIP() + ":8000/devices/register";
+      http.begin(regUrl);
+      http.addHeader("Content-Type", "application/json");
+
+      StaticJsonDocument<200> regDoc;
+      regDoc["mac_address"] = macStr;
+      regDoc["email"] = email;
+
+      String regPayload;
+      serializeJson(regDoc, regPayload);
+
+      int httpCode = http.POST(regPayload);
+      if (httpCode == 200 || httpCode == 201) {
+        Serial.println("Device successfully registered to user: " + email);
+      } else {
+        Serial.printf("Device registration failed, HTTP code: %d\n", httpCode);
+        showStatus("Error", "Registeration Error: Try reseting the device", TFT_RED);
+        smartDelay(10000);
+        ESP.restart();
+      }
+      http.end();
+    } else {
+      factoryReset();
+    }
   }
 }
 
@@ -186,7 +219,7 @@ void loop() {
     Serial.println("..................");
     showSensorData(tempC, humi, lux, soilTemp, moistureSurface, moistureRoot, airQuality, ppm);
 
-    sendDataToLaptop(tempC, humi, lux, ppm, airQuality, moistureSurface, moistureRoot);
+    sendDataToLaptop(tempC, humi, lux, ppm, airQuality, moistureSurface, moistureRoot, soilTemp);
 
     lastSensorRead = millis();
   }

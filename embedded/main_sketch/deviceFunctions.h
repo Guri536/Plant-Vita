@@ -7,6 +7,58 @@
 #include <HTTPClient.h>
 #include <ArduinoJson.h>
 #include <SPIFFS.h>
+#include <TFTScreen.h>
+#include <TFT_eSPI.h>
+
+void factoryReset() {
+  Serial.println("\nFactory reseting the device");
+
+  digitalWrite(RED_LED_PIN, PIN_LED_ON);
+  digitalWrite(GREEN_LED_PIN, !PIN_LED_ON);
+
+  clearPreferences("wifi-creds");
+
+  for (int i = 0; i < 5; i++) {
+    digitalWrite(RED_LED_PIN, !PIN_LED_ON);
+    delay(100);
+    digitalWrite(RED_LED_PIN, PIN_LED_ON);
+    delay(100);
+  }
+
+  Serial.println("Restarting system...");
+  ESP.restart();
+}
+
+void checkResetButton() {
+  if (digitalRead(RESET_BUTTON_PIN) == LOW) {
+    unsigned long startTime = millis();
+    bool longPress = false;
+
+    while (digitalRead(RESET_BUTTON_PIN) == LOW) {
+      if (millis() - startTime > BUTTON_LONG_PRESS_MS) {
+        factoryReset();
+        longPress = true;
+      }
+      delay(10);
+    }
+
+    unsigned long pressedDuration = millis() - startTime;
+
+    if (pressedDuration > 50 && !longPress) {
+      Serial.println("\nRebooting Triggered");
+      delay(100);
+      ESP.restart();
+    }
+  }
+}
+
+void smartDelay(unsigned long ms) {
+  unsigned long start = millis();
+  while (millis() - start < ms) {
+    checkResetButton(); 
+    delay(1);          
+  }
+}
 
 void shutDownSystem() {
   Serial.println("Shutting down");
@@ -14,7 +66,10 @@ void shutDownSystem() {
   digitalWrite(RED_LED_PIN, PIN_LED_ON);
   server.stop();
   WiFi.softAPdisconnect(true);
-  while (true) { delay(10000); }
+  showStatus("Error", "Reset the device", TFT_RED);
+  while (true) {
+    checkResetButton();
+  }
 }
 
 void handleLoginFailure(String reason) {
@@ -31,44 +86,6 @@ void handleLoginFailure(String reason) {
   }
 
   ESP.restart();
-}
-
-void checkResetButton() {
-  if (digitalRead(RESET_BUTTON_PIN) == LOW) {
-    unsigned long startTime = millis();
-    bool longPress = false;
-
-    while (digitalRead(RESET_BUTTON_PIN) == LOW) {
-      if (millis() - startTime > BUTTON_LONG_PRESS_MS) {
-        Serial.println("\nFactory reseting the device");
-
-        digitalWrite(RED_LED_PIN, PIN_LED_ON);
-        digitalWrite(GREEN_LED_PIN, !PIN_LED_ON);
-
-        clearPreferences("wifi-creds");
-
-        for (int i = 0; i < 5; i++) {
-          digitalWrite(RED_LED_PIN, !PIN_LED_ON);
-          delay(100);
-          digitalWrite(RED_LED_PIN, PIN_LED_ON);
-          delay(100);
-        }
-
-        Serial.println("Restarting system...");
-        ESP.restart();
-        longPress = true;
-      }
-      delay(10);
-    }
-
-    unsigned long pressedDuration = millis() - startTime;
-
-    if (pressedDuration > 50 && !longPress) {
-      Serial.println("\nRebooting Triggered");
-      delay(100);
-      ESP.restart();
-    }
-  }
 }
 
 void getWifiCredsFromAP() {
@@ -115,7 +132,7 @@ void getWifiCredsFromAP() {
 
 void setupSensors() {
   Wire.begin(I2C_SDA_PIN, I2C_SCL_PIN);
-  
+
   if (bh1750.begin(BH1750::CONTINUOUS_HIGH_RES_MODE)) {
     Serial.println("BH1750 initialized");
   } else {
@@ -127,14 +144,14 @@ float getLightLevel() {
   if (bh1750.measurementReady()) {
     return bh1750.readLightLevel();
   }
-  return -1.0; 
+  return -1.0;
 }
 
 int getAirQuality() {
   int rawValue = analogRead(MQ135_PIN);
   rawValue = constrain(rawValue, 0, MQ135_MAX_RAW);
   int qualityPercent = map(rawValue, 0, MQ135_MAX_RAW, 0, 100);
-  
+
   return qualityPercent;
 }
 
@@ -149,8 +166,8 @@ float getPPM() {
   float sensor_volt = voltage_at_pin * 2.0;
 
   // Safety clamp to prevent divide-by-zero or negative resistance errors
-  if(sensor_volt == 0) sensor_volt = 0.1;
-  if(sensor_volt >= 5.0) sensor_volt = 4.9;
+  if (sensor_volt == 0) sensor_volt = 0.1;
+  if (sensor_volt >= 5.0) sensor_volt = 4.9;
 
   // 3. Calculate Sensor Resistance (Rs)
   // The sensor forms a voltage divider with an internal load resistor (RL).
@@ -169,14 +186,14 @@ float getPPM() {
 
 int getSoilMoisture(int pin) {
   int rawValue = analogRead(pin);
-  
+
   int constrainedVal = constrain(rawValue, SOIL_WET_VAL, SOIL_DRY_VAL);
-  
+
   // Map raw value to percentage:
   // map(value, fromLow, fromHigh, toLow, toHigh)
   // Note: DRY is High (0%), WET is Low (100%)
   int percentage = map(constrainedVal, SOIL_DRY_VAL, SOIL_WET_VAL, 0, 100);
-  
+
   return percentage;
 }
 
@@ -184,24 +201,31 @@ String getServerIP() {
   return WiFi.gatewayIP().toString();
 }
 
-void sendDataToLaptop(float temp, float humi, float lux, float ppm, int airQuality, int moistSurface, int moistRoot) {
+void sendDataToLaptop(float temp, float humi, float lux, float ppm, int airQuality, int moistSurface, int moistRoot, float soilTemp) {
   if (WiFi.status() != WL_CONNECTED) return;
 
+  String mac = WiFi.macAddress();
+  mac.replace(":", "");
+
+  char endpoint[64];
+  snprintf(endpoint, sizeof(endpoint), SERVER_ENDPOINT, mac.c_str());
+
   HTTPClient http;
-  String url = String("http://") + getServerIP() + ":" + SERVER_PORT + SERVER_ENDPOINT;
+  String url = String("http://") + getServerIP() + ":" + SERVER_PORT + endpoint;
 
   http.begin(url);
   http.addHeader("Content-Type", "application/json");
 
   // Build JSON payload
   StaticJsonDocument<256> doc;
-  doc["temp_c"]          = temp;
-  doc["humidity_pct"]    = humi;
-  doc["light_lux"]       = lux;
-  doc["air_ppm"]         = ppm;
+  doc["temp_c"] = temp;
+  doc["humidity_pct"] = humi;
+  doc["light_lux"] = lux;
+  doc["air_ppm"] = ppm;
   doc["air_quality_pct"] = airQuality;
-  doc["soil_surface_pct"]= moistSurface;
-  doc["soil_root_pct"]   = moistRoot;
+  doc["soil_surface_pct"] = moistSurface;
+  doc["soil_root_pct"] = moistRoot;
+  doc["soil_temp_c"] = soilTemp;
 
   String payload;
   serializeJson(doc, payload);
@@ -274,7 +298,7 @@ bool triggerCapture() {
   while (millis() - timeout < 10000) {
     if (Serial2.available()) {
       uint8_t b = Serial2.read();
-      
+
       if (prev == FRAME_START_1 && b == FRAME_START_2) {
         Serial.println("Start marker received");
         markerFound = true;
@@ -286,7 +310,7 @@ bool triggerCapture() {
         return false;
       }
       prev = b;
-      timeout = millis(); // Reset on each byte received
+      timeout = millis();  // Reset on each byte received
     }
   }
 
@@ -345,8 +369,8 @@ bool triggerCapture() {
 
   // Read end marker + checksum
   while (Serial2.available() < 3) delay(10);
-  uint8_t end1     = Serial2.read();
-  uint8_t end2     = Serial2.read();
+  uint8_t end1 = Serial2.read();
+  uint8_t end2 = Serial2.read();
   uint8_t checksum = Serial2.read();
 
   file.close();

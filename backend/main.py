@@ -383,15 +383,15 @@ async def _call_openrouter(
 
     # ── 2. Format Variables for the Prompt ───────────────────────────────────
     if latest_sensor:
-        temp = f"{latest_sensor.temperature}°C"
-        moisture = f"{latest_sensor.soil_moisture}%"
-        humidity = f"{latest_sensor.humidity}%"
+        temp = f"Air: {latest_sensor.temp_c}°C | Soil: {latest_sensor.soil_temp_c}°C"
+        moisture = f"Surface: {latest_sensor.soil_surface_pct}% | Root: {latest_sensor.soil_root_pct}%"
+        humidity = f"{latest_sensor.humidity_pct}%"
         lux = f"{latest_sensor.light_lux} lx"
+        air = f"PPM: {latest_sensor.air_ppm} | Quality: {latest_sensor.air_quality_pct}%"
     else:
-        temp = moisture = humidity = lux = "Sensor offline/Unknown"
+        temp = moisture = humidity = lux = air = "Sensor offline/Unknown"
 
     if last_image and last_image.ai_diagnosis:
-        # Slice it down slightly so the prompt doesn't get infinitely long over time
         past_history = last_image.ai_diagnosis[:300] + "..."
     else:
         past_history = "No previous diseases recorded."
@@ -407,7 +407,11 @@ Analyze the provided plant image alongside its environmental sensor data and med
 
 ### 📊 Contextual Data
 * **Plant Species:** {plant_species}
-* **Current Sensor Readings:** Temperature: {temp} | Soil Moisture: {moisture} | Ambient Humidity: {humidity} | Light: {lux}
+* **Current Sensor Readings:** - Temperature: {temp} 
+  - Moisture: {moisture} 
+  - Ambient Humidity: {humidity} 
+  - Light: {lux}
+  - Air Metrics: {air}
 * **Vision AI Pre-scan:** {pre_scan}
 * **Past Diagnostic History:** {past_history}
 
@@ -684,6 +688,7 @@ async def register_device(
     payload: DeviceRegister,
     session: AsyncSession = Depends(get_session),
 ):
+
     # 1. Find user by email
     user_result = await session.execute(select(User).where(User.email == payload.email))
     user = user_result.scalars().first()
@@ -702,7 +707,7 @@ async def register_device(
         await session.commit()
         await session.refresh(existing_plant)
         return {"registered": True, "is_new": False, "plant_id": existing_plant.id}
-
+ 
     # 3. Auto-increment plant name per user
     user_plants_result = await session.execute(
         select(Plant).where(Plant.owner_id == cast(int, user.id))
