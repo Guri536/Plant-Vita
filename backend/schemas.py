@@ -57,6 +57,29 @@ class PlantRead(PlantCreate):
     id: int
     owner_id: int
     sensor_readings: List[SensorReadingRead] = []
+    
+class PlantUpdate(BaseModel):
+    name: Optional[str] = None
+    species: Optional[str] = None
+    moisture_threshold_min: Optional[int] = None
+    moisture_threshold_max: Optional[int] = None
+    indoor: Optional[bool] = None
+    watering_mode: Optional[str] = None
+    pump_duration: Optional[int] = None
+    capture_rate: Optional[int] = None
+    notifications_enabled: Optional[bool] = None
+    alerts_enabled: Optional[bool] = None
+    light_condition: Optional[str] = None
+    notes: Optional[str] = None
+    
+class PlantSummary(BaseModel):
+    id: int
+    name: str
+    species: Optional[str] = None
+    latest_image_url: Optional[str] = None
+    latest_moisture_pct: Optional[float] = None
+    latest_health_status: Optional[str] = None
+    is_critical: bool = False
 
 class DeviceRegister(BaseModel):
     mac_address: str

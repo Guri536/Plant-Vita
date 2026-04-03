@@ -22,7 +22,9 @@ import logging
 import os
 from contextlib import asynccontextmanager
 from datetime import timedelta
-from typing import AsyncGenerator, List, cast
+from typing import AsyncGenerator, List, cast, Any
+import aiofiles
+import base64
 
 from fastapi import (
     BackgroundTasks,
@@ -33,7 +35,7 @@ from fastapi import (
     HTTPException,
     UploadFile,
     status,
-    Form
+    Form,
 )
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
@@ -58,6 +60,8 @@ from schemas import (
     ImageUploadResponse,
     PlantCreate,
     PlantRead,
+    PlantUpdate,
+    PlantSummary,
     SensorReadingCreate,
     SensorReadingRead,
     SocialLogin,
@@ -66,10 +70,12 @@ from schemas import (
     TokenRefreshRequest,
     UserCreate,
     UserRead,
-    DeviceRegister, 
-    DeviceRegisterResponse
+    DeviceRegister,
+    DeviceRegisterResponse,
 )
 from vision_client import call_vision_service, check_vision_health
+from fastapi.staticfiles import StaticFiles
+
 
 # ── Logging ───────────────────────────────────────────────────────────────────
 
@@ -123,6 +129,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.mount("/received_images", StaticFiles(directory="received_images"), name="images")
+
 
 # ── Auth helpers ──────────────────────────────────────────────────────────────
 
@@ -215,7 +224,10 @@ async def _run_vision_and_LLM_inference(
 
     # ── 1. Call Vision Microservice ───────────────────────────────────────────
     vision = await call_vision_service(
-        jpeg_bytes, filename=f"plant_{plant_id}.jpg", plant_species=plant.species, force_universal=force_universal
+        jpeg_bytes,
+        filename=f"plant_{plant_id}.jpg",
+        plant_species=plant.species,
+        force_universal=force_universal,
     )
 
     # ── 2. Persist vision fields ──────────────────────────────────────────────
@@ -387,7 +399,9 @@ async def _call_openrouter(
         moisture = f"Surface: {latest_sensor.soil_surface_pct}% | Root: {latest_sensor.soil_root_pct}%"
         humidity = f"{latest_sensor.humidity_pct}%"
         lux = f"{latest_sensor.light_lux} lx"
-        air = f"PPM: {latest_sensor.air_ppm} | Quality: {latest_sensor.air_quality_pct}%"
+        air = (
+            f"PPM: {latest_sensor.air_ppm} | Quality: {latest_sensor.air_quality_pct}%"
+        )
     else:
         temp = moisture = humidity = lux = air = "Sensor offline/Unknown"
 
@@ -683,6 +697,7 @@ async def read_my_plants(
     )
     return result.scalars().all()
 
+
 @app.post("/devices/register", response_model=DeviceRegisterResponse)
 async def register_device(
     payload: DeviceRegister,
@@ -707,7 +722,7 @@ async def register_device(
         await session.commit()
         await session.refresh(existing_plant)
         return {"registered": True, "is_new": False, "plant_id": existing_plant.id}
- 
+
     # 3. Auto-increment plant name per user
     user_plants_result = await session.execute(
         select(Plant).where(Plant.owner_id == cast(int, user.id))
@@ -729,6 +744,7 @@ async def register_device(
     await session.refresh(new_plant)
 
     return {"registered": True, "is_new": True, "plant_id": cast(int, new_plant.id)}
+
 
 # ── Sensor readings ───────────────────────────────────────────────────────────
 
@@ -818,7 +834,7 @@ async def upload_plant_image(
         image_id=cast(int, db_image.id),
         jpeg_bytes=jpeg_bytes,
         plant_id=cast(int, plant.id),
-        force_universal=force_universal
+        force_universal=force_universal,
     )
 
     return ImageUploadResponse(
@@ -830,25 +846,31 @@ async def upload_plant_image(
 # ── Image history & diagnosis ─────────────────────────────────────────────────
 
 
+BASE_URL = "http://192.168.137.1:8000"
+
+
 @app.get(
-    "/plants/{plant_id}/images/",
-    response_model=List[ImageRead],
-    summary="Image history for a plant",
-    tags=["vision"],
-)
+    "/plants/{plant_id}/images/", 
+    response_model=List[ImageRead]
+ )
 async def get_plant_images(
-    plant_id: int,
-    limit: int = 20,
-    session: AsyncSession = Depends(get_session),
+    plant_id: int, 
+    session: AsyncSession = Depends(get_session)
 ):
-    """Returns the most recent ``limit`` images with all vision result fields."""
     result = await session.execute(
         select(Image)
         .where(Image.plant_id == plant_id)
         .order_by(Image.timestamp.desc())  # type: ignore[attr-defined]
-        .limit(limit)
     )
-    return result.scalars().all()
+    db_images = result.scalars().all()
+
+    for img in db_images:
+        if img.image_url and not img.image_url.startswith("http"):
+            # Clean up the path and prepend the base URL
+            path = img.image_url.lstrip("/")
+            img.image_url = f"{BASE_URL}/{path}"
+
+    return db_images
 
 
 @app.get(
@@ -870,10 +892,120 @@ async def get_latest_diagnosis(
     result = await session.execute(
         select(Image)
         .where(Image.plant_id == plant_id)
-        .order_by(Image.timestamp.desc())  # type: ignore[attr-defined]
+        .order_by(Image.timestamp.desc()) # type: ignore[attr-defined]
         .limit(1)
     )
     img = result.scalars().first()
     if not img:
         raise HTTPException(status_code=404, detail="No images found for this plant")
+
+    # FIX: Prepend the BASE_URL to the image path before returning
+    if img.image_url and not img.image_url.startswith("http"):
+        path = img.image_url.lstrip("/")
+        img.image_url = f"{BASE_URL}/{path}"
+
     return img
+
+
+@app.patch("/plants/{plant_id}", response_model=PlantRead)
+async def update_plant(
+    plant_id: int,
+    plant_update: PlantUpdate,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    # 1. Fetch the plant
+    result = await session.execute(
+        select(Plant)
+        .where(Plant.id == plant_id)
+        .options(selectinload(cast(Any, Plant.sensor_readings)))
+    )
+    plant = result.scalars().first()
+
+    if not plant:
+        raise HTTPException(status_code=404, detail="Plant not found")
+
+    # 2. Verify ownership
+    if plant.owner_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Not authorized to edit this plant")
+
+    # 3. Apply partial updates
+    update_data = plant_update.model_dump(exclude_unset=True)
+    for key, value in update_data.items():
+        setattr(plant, key, value)
+
+    session.add(plant)
+    await session.commit()
+    await session.refresh(plant)
+
+    return plant
+
+
+@app.get("/dashboard/plants", response_model=List[PlantSummary], tags=["dashboard"])
+async def get_dashboard_plants(
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    """
+    Returns a lightweight summary of all plants owned by the user.
+    Serves local images via static URLs instead of Base64.
+    """
+    # 1. Fetch user's plants
+    plant_result = await session.execute(
+        select(Plant).where(Plant.owner_id == current_user.id)
+    )
+    plants = plant_result.scalars().all()
+
+    summaries = []
+    for p in plants:
+        # 2. Get latest image row
+        img_result = await session.execute(
+            select(Image)
+            .where(Image.plant_id == p.id)
+            .order_by(Image.timestamp.desc()) # type: ignore[attr-defined]
+            .limit(1)
+        )
+        latest_img = img_result.scalars().first()
+
+        # 3. Format Image URL (Cloud vs Static)
+        final_image_url = None
+        if latest_img and latest_img.image_url:
+            if latest_img.image_url.startswith("http"):
+                final_image_url = latest_img.image_url
+            else:
+                # Prepend BASE_URL to the local path (e.g., /received_images/...)
+                path = latest_img.image_url.lstrip("/")
+                final_image_url = f"{BASE_URL}/{path}"
+
+        # 4. Get latest sensor reading
+        sensor_result = await session.execute(
+            select(SensorReading)
+            .where(SensorReading.plant_id == p.id)
+            .order_by(SensorReading.timestamp.desc()) # type: ignore[attr-defined]
+            .limit(1)
+        )
+        latest_sensor = sensor_result.scalars().first()
+
+        # 5. Determine critical status
+        is_critical = False
+        moisture = None
+        if latest_sensor:
+            moisture = latest_sensor.soil_root_pct
+            if moisture < p.moisture_threshold_min or moisture > p.moisture_threshold_max:
+                is_critical = True
+
+        summaries.append(
+            PlantSummary(
+                id=cast(int, p.id),
+                name=p.name,
+                species=p.species,
+                latest_image_url=final_image_url,
+                latest_moisture_pct=moisture,
+                latest_health_status=(
+                    latest_img.detected_health if latest_img else "Pending Analysis"
+                ),
+                is_critical=is_critical,
+            )
+        )
+
+    return summaries

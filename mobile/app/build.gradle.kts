@@ -58,6 +58,12 @@ dependencies {
     implementation(libs.androidx.navigation.compose)
     implementation(libs.androidx.compose.runtime)
     implementation(libs.androidx.work.runtime.ktx)
+    implementation(libs.coil)
+    implementation(libs.coil.compose)
+    implementation(libs.coil.network.okhttp)
+    implementation(libs.androidx.ui.graphics)
+    implementation(libs.androidx.compose.animation)
+    implementation("com.github.jeziellago:compose-markdown:0.7.0")
 
     // For tests
     testImplementation(libs.junit)

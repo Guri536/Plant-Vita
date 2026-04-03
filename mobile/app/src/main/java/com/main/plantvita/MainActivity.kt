@@ -6,6 +6,8 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.work.Constraints
 import androidx.work.ExistingPeriodicWorkPolicy
@@ -14,9 +16,12 @@ import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import com.main.plantvita.data.HealthCheckWorker
 import com.main.plantvita.navigation.AppNavigation
+import com.main.plantvita.network.RetrofitClient
 import com.main.plantvita.network.bindToWifiNetwork
 import com.main.plantvita.ui.theme.PlantVitaTheme
 import com.main.plantvita.viewmodel.AuthViewModel
+import com.main.plantvita.viewmodel.HomeViewModel
+import com.main.plantvita.viewmodel.PlantDetailViewModel
 import java.util.concurrent.TimeUnit
 
 class MainActivity : ComponentActivity() {
@@ -32,8 +37,9 @@ class MainActivity : ComponentActivity() {
         val workRequest = PeriodicWorkRequestBuilder<HealthCheckWorker>(15, TimeUnit.MINUTES)
             .setConstraints(
                 Constraints.Builder()
-                .setRequiredNetworkType(NetworkType.CONNECTED)
-                .build())
+                    .setRequiredNetworkType(NetworkType.CONNECTED)
+                    .build()
+            )
             .build()
 
         WorkManager.getInstance(this).enqueueUniquePeriodicWork(
@@ -45,7 +51,16 @@ class MainActivity : ComponentActivity() {
         setContent {
             PlantVitaTheme {
                 val viewModel: AuthViewModel = viewModel()
-                AppNavigation(viewModel = viewModel)
+                val homeViewModel: HomeViewModel = viewModel(
+                    factory = object : ViewModelProvider.Factory {
+                        override fun <T : ViewModel> create(modelClass: Class<T>): T {
+                            return HomeViewModel(
+                                apiService = RetrofitClient.getInstance(this@MainActivity),
+                            ) as T
+                        }
+                    }
+                )
+                AppNavigation(viewModel = viewModel, homeViewModel)
             }
         }
     }
