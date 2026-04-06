@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 """
 models.py  (updated)
 ────────────────────
@@ -12,10 +13,16 @@ Changes vs original:
 
 from typing import Optional, List, Any
 from datetime import datetime, timezone, date, UTC
+=======
+from typing import Optional, List
+from datetime import datetime
+>>>>>>> 9877486 (Frontend With Prediction model)
 from sqlmodel import Field, SQLModel, Relationship
 from sqlalchemy import Column, DateTime
 
+
 class User(SQLModel, table=True):
+<<<<<<< HEAD
   __tablename__: Any = "users"
   
   id: Optional[int] = Field(default=None, primary_key=True)
@@ -23,10 +30,27 @@ class User(SQLModel, table=True):
   hash_pass: str
 
   plants: List["Plant"] = Relationship(back_populates="owner")
+=======
+    __tablename__ = "users"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    email: str = Field(index=True, unique=True)
+
+    # password is optional for Google login
+    hash_pass: Optional[str] = Field(default=None)
+
+    # new column
+    login_type: str = Field(default="manual")
+
+    plants: List["Plant"] = Relationship(back_populates="owner")
+>>>>>>> 9877486 (Frontend With Prediction model)
 
 
 class Plant(SQLModel, table=True):
+    __tablename__ = "plant"
+
     id: Optional[int] = Field(default=None, primary_key=True)
+<<<<<<< HEAD
     owner_id: int = Field(foreign_key="users.id")
     mac_address: str = Field(unique=True, index=True)
     name: str
@@ -51,6 +75,26 @@ class Plant(SQLModel, table=True):
         back_populates="plant",
         sa_relationship_kwargs={"lazy": "selectin"},
     )
+=======
+
+    # fixed FK reference
+    owner_id: int = Field(foreign_key="users.id")
+
+    mac_address: str = Field(unique=True, index=True)
+    name: str
+    species: str
+
+    moisture_threshold_min: int
+    moisture_threshold_max: int
+
+    owner: User = Relationship(back_populates="plants")
+
+    sensor_readings: List["SensorReading"] = Relationship(
+        back_populates="plant",
+        sa_relationship_kwargs={"lazy": "selectin"}
+    )
+
+>>>>>>> 9877486 (Frontend With Prediction model)
     images: List["Image"] = Relationship(
         back_populates="plant",
         sa_relationship_kwargs={"lazy": "selectin"},
@@ -58,8 +102,12 @@ class Plant(SQLModel, table=True):
 
 
 class SensorReading(SQLModel, table=True):
+    __tablename__ = "sensorreading"
+
     id: Optional[int] = Field(default=None, primary_key=True)
+
     plant_id: int = Field(foreign_key="plant.id")
+<<<<<<< HEAD
     timestamp: datetime = Field(
         default_factory=lambda: datetime.now(UTC),
         sa_column=Column(DateTime(timezone=True), index=True, nullable=False)
@@ -97,19 +145,42 @@ class Image(SQLModel, table=True):
       trigger_llm           — True when Gemini should be called for a full diagnosis
       vision_error          — populated if the Vision Microservice was unreachable
     """
+=======
+
+    timestamp: datetime = Field(default_factory=datetime.utcnow, index=True)
+
+    soil_moisture: float
+    temperature: float
+    humidity: float
+    light_lux: float
+    air_quality: Optional[float] = None
+
+    plant: Plant = Relationship(back_populates="sensor_readings")
+
+
+class Image(SQLModel, table=True):
+    __tablename__ = "image"
+>>>>>>> 9877486 (Frontend With Prediction model)
 
     id: Optional[int] = Field(default=None, primary_key=True)
+
     plant_id: int = Field(foreign_key="plant.id")
 
+<<<<<<< HEAD
     # ── Set at upload time ────────────────────────────────────────────────
     timestamp: datetime = Field(
         default_factory=lambda: datetime.now(UTC),
         sa_column=Column(DateTime(timezone=True), index=True, nullable=False)
     )
+=======
+    timestamp: datetime = Field(default_factory=datetime.utcnow)
+
+>>>>>>> 9877486 (Frontend With Prediction model)
     image_url: str
 
     # ── Set by Gemini background task (unchanged from original) ───────────
     ai_diagnosis: Optional[str] = None
+<<<<<<< HEAD
 
     # ── Set by Vision Microservice background task ────────────────────────
     green_density:        Optional[float] = None
@@ -126,3 +197,8 @@ class Image(SQLModel, table=True):
     vision_error:  Optional[str]  = None     # null when vision call succeeded
 
     plant: "Plant" = Relationship(back_populates="images")
+=======
+    green_density: Optional[float] = None
+
+    plant: Plant = Relationship(back_populates="images")
+>>>>>>> 9877486 (Frontend With Prediction model)

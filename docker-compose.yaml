@@ -1,3 +1,5 @@
+version: "3.9"
+
 services:
   db:
     image: postgres:15-alpine
@@ -16,6 +18,10 @@ services:
     build: ./backend
     container_name: plantvita_backend
     restart: always
+<<<<<<< HEAD
+=======
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+>>>>>>> 9877486 (Frontend With Prediction model)
     volumes:
       - ./backend:/app/backend
     working_dir: /app/backend
@@ -25,6 +31,7 @@ services:
     env_file:
       - .env
     environment:
+<<<<<<< HEAD
       VISION_SERVICE_URL: ${VISION_SERVICE_URL:-http://host.docker.internal:8001}
       VISION_INFERENCE_KEY: ${VISION_INFERENCE_KEY:-}
       VISION_TIMEOUT: ${VISION_TIMEOUT:-60}
@@ -32,6 +39,10 @@ services:
       PYTHONIOENCODING: UTF-8
     tty: true
     stdin_open: true
+=======
+      DB_URL: postgresql+asyncpg://${DB_USER}:${DB_PASS}@db:5432/${DB_NAME}
+      GEMINI_KEY: ${GEMINI_KEY}
+>>>>>>> 9877486 (Frontend With Prediction model)
     depends_on:
       - db
 
@@ -49,13 +60,20 @@ services:
     ports:
       - "${FRONTEND_PORT}:3000"
     environment:
+<<<<<<< HEAD
       NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
       WATCHPACK_POLLING: "true"
+=======
+      NEXT_PUBLIC_API_URL: http://localhost:${SERVER_PORT}
+      NEXTAUTH_URL: http://localhost:${FRONTEND_PORT}
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET}
+>>>>>>> 9877486 (Frontend With Prediction model)
     depends_on:
       - backend
 
   adminer:
     image: adminer
+    container_name: plantvita_adminer
     restart: always
     ports:
       - "8080:8080"

@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 """
 main.py  (updated)
 ───────────────────
@@ -19,6 +20,14 @@ Changes vs original:
 from __future__ import annotations
 
 import logging
+=======
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy import text
+from pydantic import BaseModel
+>>>>>>> 9877486 (Frontend With Prediction model)
 import os
 from contextlib import asynccontextmanager
 from datetime import timedelta
@@ -26,6 +35,7 @@ from typing import AsyncGenerator, List, cast, Any
 import aiofiles
 import base64
 
+<<<<<<< HEAD
 from fastapi import (
     BackgroundTasks,
     Depends,
@@ -1009,3 +1019,177 @@ async def get_dashboard_plants(
         )
 
     return summaries
+=======
+# ==============================
+# APP INIT
+# ==============================
+
+app = FastAPI(title="PlantVita API")
+
+# ==============================
+# CORS CONFIGURATION
+# ==============================
+
+ALLOWED_ORIGINS = [
+    "http://localhost:8010",
+    "http://127.0.0.1:8010",
+    "http://frontend:8010",  # docker internal
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=ALLOWED_ORIGINS,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# ==============================
+# DATABASE CONFIGURATION
+# ==============================
+
+DATABASE_URL = os.getenv("DB_URL")
+
+if not DATABASE_URL:
+    raise RuntimeError("DB_URL environment variable is not set")
+
+engine = create_async_engine(
+    DATABASE_URL,
+    echo=True
+)
+
+AsyncSessionLocal = sessionmaker(
+    engine,
+    class_=AsyncSession,
+    expire_on_commit=False,
+)
+
+# ==============================
+# REQUEST MODELS
+# ==============================
+
+class AddPlantRequest(BaseModel):
+    user_id: int
+    plant_id: int
+    nickname: str | None = None
+
+
+# ==============================
+# HEALTH CHECK
+# ==============================
+
+@app.get("/")
+async def health():
+    return {"status": "PlantVita API running 🚀"}
+
+
+# ==============================
+# GET ALL PLANTS (FOR DROPDOWN)
+# ==============================
+
+@app.get("/api/plants")
+async def get_plants():
+
+    try:
+        async with AsyncSessionLocal() as session:
+
+            result = await session.execute(
+                text('SELECT "Id", "Plants" FROM "Plants List" ORDER BY "Plants"')
+            )
+
+            rows = result.fetchall()
+
+            plants = []
+
+            for row in rows:
+                plants.append({
+                    "id": row[0],
+                    "name": row[1]
+                })
+
+            return plants
+
+    except Exception as e:
+        print("Database error:", e)
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to fetch plants"
+        )
+
+
+# ==============================
+# ADD PLANT TO USER COLLECTION
+# ==============================
+
+@app.post("/api/user/add-plant")
+async def add_plant(data: AddPlantRequest):
+
+    try:
+        async with AsyncSessionLocal() as session:
+
+            await session.execute(
+                text("""
+                INSERT INTO user_plants (user_id, plant_id, nickname)
+                VALUES (:user_id, :plant_id, :nickname)
+                """),
+                {
+                    "user_id": data.user_id,
+                    "plant_id": data.plant_id,
+                    "nickname": data.nickname
+                }
+            )
+
+            await session.commit()
+
+            return {
+                "message": "Plant added successfully"
+            }
+
+    except Exception as e:
+        print("Database error:", e)
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to add plant"
+        )
+
+
+# ==============================
+# GET USER PLANTS
+# ==============================
+
+@app.get("/api/user/{user_id}/plants")
+async def get_user_plants(user_id: int):
+
+    try:
+        async with AsyncSessionLocal() as session:
+
+            result = await session.execute(
+                text("""
+                SELECT p.id, p.name, up.nickname
+                FROM user_plants up
+                JOIN "Plants List" p ON p.id = up.plant_id
+                WHERE up.user_id = :user_id
+                """),
+                {"user_id": user_id}
+            )
+
+            rows = result.fetchall()
+
+            plants = []
+
+            for row in rows:
+                plants.append({
+                    "id": row[0],
+                    "name": row[1],
+                    "nickname": row[2]
+                })
+
+            return plants
+
+    except Exception as e:
+        print("Database error:", e)
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to fetch user plants"
+        )
+>>>>>>> 9877486 (Frontend With Prediction model)
