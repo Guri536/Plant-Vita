@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 """
 main.py  (updated)
 ───────────────────
@@ -19,6 +20,9 @@ Changes vs original:
 from __future__ import annotations
 
 import logging
+=======
+from pydantic import BaseModel
+>>>>>>> 9877486 (Frontend With Prediction model)
 import os
 from contextlib import asynccontextmanager
 from datetime import timedelta
@@ -26,6 +30,7 @@ from typing import AsyncGenerator, List, cast, Any, Optional
 import aiofiles
 import base64
 
+<<<<<<< HEAD
 from fastapi import (
     BackgroundTasks,
     Depends,
@@ -43,7 +48,7 @@ from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from jose import JWTError, jwt
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import selectinload
-from sqlmodel import SQLModel, select
+from sqlmodel import SQLModel, select, text
 from datetime import datetime, timezone, date, UTC
 
 from auth import (
@@ -1134,3 +1139,5 @@ async def get_sensor_history(
     )
     readings = result.scalars().all()
     return list(reversed(readings))  # chronological order for charting
+=======
+>>>>>>> 9877486 (Frontend With Prediction model)

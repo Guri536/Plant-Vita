@@ -1,0 +1,14 @@
+[
+  {
+    "Plant_Name": "Aloe Vera",
+    "Surface_Moisture_%": 100,
+    "Root_Moisture_%": 100,
+    "Soil_Temp_C": -127, 
+    "Temperature_C": 28.8,
+    "Humidity_%": 53.4,
+    "Light_Lux": 75.83333,
+    "Air_Quality_Index": 34,
+    "PPM": 4129776
+
+  }
+]

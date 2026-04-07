@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 """
 models.py  (updated)
 ────────────────────
@@ -12,6 +13,9 @@ Changes vs original:
 
 from typing import Optional, List, Any
 from datetime import datetime, timezone, date, UTC
+=======
+
+>>>>>>> 9877486 (Frontend With Prediction model)
 from sqlmodel import Field, SQLModel, Relationship
 from sqlalchemy import Column, DateTime
 
@@ -21,13 +25,19 @@ class User(SQLModel, table=True):
 
     id: Optional[int] = Field(default=None, primary_key=True)
     email: str = Field(index=True, unique=True)
-    hash_pass: str
+    hash_pass: Optional[str] = Field(default=None)
+=======
+    login_type: str = Field(default="manual")
 
     plants: List["Plant"] = Relationship(back_populates="owner")
+>>>>>>> 9877486 (Frontend With Prediction model)
 
 
 class Plant(SQLModel, table=True):
+    __tablename__ = "plant"
+
     id: Optional[int] = Field(default=None, primary_key=True)
+<<<<<<< HEAD
     owner_id: int = Field(foreign_key="users.id")
     mac_address: str = Field(unique=True, index=True)
     name: str
@@ -52,6 +62,8 @@ class Plant(SQLModel, table=True):
         back_populates="plant",
         sa_relationship_kwargs={"lazy": "selectin"},
     )
+=======
+>>>>>>> 9877486 (Frontend With Prediction model)
     images: List["Image"] = Relationship(
         back_populates="plant",
         sa_relationship_kwargs={"lazy": "selectin"},
@@ -63,8 +75,12 @@ class Plant(SQLModel, table=True):
 
 
 class SensorReading(SQLModel, table=True):
+    __tablename__ = "sensorreading"
+
     id: Optional[int] = Field(default=None, primary_key=True)
+
     plant_id: int = Field(foreign_key="plant.id")
+<<<<<<< HEAD
     timestamp: datetime = Field(
         default_factory=lambda: datetime.now(UTC),
         sa_column=Column(DateTime(timezone=True), index=True, nullable=False),
@@ -102,19 +118,26 @@ class Image(SQLModel, table=True):
       trigger_llm           — True when Gemini should be called for a full diagnosis
       vision_error          — populated if the Vision Microservice was unreachable
     """
+=======
+>>>>>>> 9877486 (Frontend With Prediction model)
 
     id: Optional[int] = Field(default=None, primary_key=True)
+
     plant_id: int = Field(foreign_key="plant.id")
 
+<<<<<<< HEAD
     # ── Set at upload time ────────────────────────────────────────────────
     timestamp: datetime = Field(
         default_factory=lambda: datetime.now(UTC),
         sa_column=Column(DateTime(timezone=True), index=True, nullable=False),
     )
+=======
+>>>>>>> 9877486 (Frontend With Prediction model)
     image_url: str
 
     # ── Set by Gemini background task (unchanged from original) ───────────
     ai_diagnosis: Optional[str] = None
+<<<<<<< HEAD
 
     # ── Set by Vision Microservice background task ────────────────────────
     green_density: Optional[float] = None
