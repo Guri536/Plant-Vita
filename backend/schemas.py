@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 """
 schemas.py  (updated)
 ─────────────────────
@@ -17,45 +16,16 @@ from typing import Optional, List
 
 
 # ── Sensor readings ────────────────────────────────────────────────────────────
-=======
-from pydantic import BaseModel
-from typing import Optional, List
-from datetime import datetime
-
-
-# ==============================
-# USER SCHEMAS
-# ==============================
-
-class UserCreate(BaseModel):
-    email: str
-    hash_pass: Optional[str] = None
-
-
-class UserRead(BaseModel):
-    id: int
-    email: str
-    login_type: str
-
-
-# ==============================
-# SENSOR SCHEMAS
-# ==============================
->>>>>>> 9877486 (Frontend With Prediction model)
 
 class SensorReadingCreate(BaseModel):
     temp_c: float
     humidity_pct: float
     light_lux: float
-<<<<<<< HEAD
     air_ppm: float
     air_quality_pct: Optional[float] = None
     soil_surface_pct: float
     soil_root_pct: float
     soil_temp_c: float
-=======
-    air_quality: Optional[float] = None
->>>>>>> 9877486 (Frontend With Prediction model)
 
 
 class SensorReadingRead(SensorReadingCreate):
@@ -63,14 +33,7 @@ class SensorReadingRead(SensorReadingCreate):
     plant_id: int
     timestamp: datetime
 
-<<<<<<< HEAD
 # ── Plant ──────────────────────────────────────────────────────────────────────
-=======
-
-# ==============================
-# PLANT SCHEMAS
-# ==============================
->>>>>>> 9877486 (Frontend With Prediction model)
 
 class PlantCreate(BaseModel):
     name: str

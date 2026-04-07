@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 """
 main.py  (updated)
 ───────────────────
@@ -20,9 +19,7 @@ Changes vs original:
 from __future__ import annotations
 
 import logging
-=======
 from pydantic import BaseModel
->>>>>>> 9877486 (Frontend With Prediction model)
 import os
 from contextlib import asynccontextmanager
 from datetime import timedelta
@@ -30,7 +27,6 @@ from typing import AsyncGenerator, List, cast, Any, Optional
 import aiofiles
 import base64
 
-<<<<<<< HEAD
 from fastapi import (
     BackgroundTasks,
     Depends,
@@ -1139,5 +1135,3 @@ async def get_sensor_history(
     )
     readings = result.scalars().all()
     return list(reversed(readings))  # chronological order for charting
-=======
->>>>>>> 9877486 (Frontend With Prediction model)
