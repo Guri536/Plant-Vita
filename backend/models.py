@@ -15,14 +15,15 @@ from datetime import datetime, timezone, date, UTC
 from sqlmodel import Field, SQLModel, Relationship
 from sqlalchemy import Column, DateTime
 
-class User(SQLModel, table=True):
-  __tablename__: Any = "users"
-  
-  id: Optional[int] = Field(default=None, primary_key=True)
-  email: str = Field(index=True, unique=True)
-  hash_pass: str
 
-  plants: List["Plant"] = Relationship(back_populates="owner")
+class User(SQLModel, table=True):
+    __tablename__: Any = "users"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    email: str = Field(index=True, unique=True)
+    hash_pass: str
+
+    plants: List["Plant"] = Relationship(back_populates="owner")
 
 
 class Plant(SQLModel, table=True):
@@ -32,7 +33,7 @@ class Plant(SQLModel, table=True):
     name: str
     moisture_threshold_min: int
     moisture_threshold_max: int
-    
+
     soil_type: Optional[str] = Field(default=None)
     capture_rate: Optional[int] = Field(default=30)  # minutes
     capture_schedule: Optional[str] = Field(default="morning")
@@ -55,6 +56,10 @@ class Plant(SQLModel, table=True):
         back_populates="plant",
         sa_relationship_kwargs={"lazy": "selectin"},
     )
+    commands: List["Command"] = Relationship(
+        back_populates="plant",
+        sa_relationship_kwargs={"lazy": "selectin"},
+    )
 
 
 class SensorReading(SQLModel, table=True):
@@ -62,7 +67,7 @@ class SensorReading(SQLModel, table=True):
     plant_id: int = Field(foreign_key="plant.id")
     timestamp: datetime = Field(
         default_factory=lambda: datetime.now(UTC),
-        sa_column=Column(DateTime(timezone=True), index=True, nullable=False)
+        sa_column=Column(DateTime(timezone=True), index=True, nullable=False),
     )
 
     temp_c: float
@@ -104,7 +109,7 @@ class Image(SQLModel, table=True):
     # ── Set at upload time ────────────────────────────────────────────────
     timestamp: datetime = Field(
         default_factory=lambda: datetime.now(UTC),
-        sa_column=Column(DateTime(timezone=True), index=True, nullable=False)
+        sa_column=Column(DateTime(timezone=True), index=True, nullable=False),
     )
     image_url: str
 
@@ -112,17 +117,32 @@ class Image(SQLModel, table=True):
     ai_diagnosis: Optional[str] = None
 
     # ── Set by Vision Microservice background task ────────────────────────
-    green_density:        Optional[float] = None
-    segmentation_success: Optional[bool]  = None
+    green_density: Optional[float] = None
+    segmentation_success: Optional[bool] = None
 
-    detected_species:   Optional[str]   = None
+    detected_species: Optional[str] = None
     species_confidence: Optional[float] = None
-    in_model_scope:     Optional[bool]  = None
+    in_model_scope: Optional[bool] = None
 
-    detected_health:   Optional[str]   = None
+    detected_health: Optional[str] = None
     health_confidence: Optional[float] = None
 
-    trigger_llm:   Optional[bool] = None
-    vision_error:  Optional[str]  = None     # null when vision call succeeded
+    trigger_llm: Optional[bool] = None
+    vision_error: Optional[str] = None  # null when vision call succeeded
 
     plant: "Plant" = Relationship(back_populates="images")
+
+
+class Command(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    plant_id: int = Field(foreign_key="plant.id")
+    command_type: str = Field(default="pump")
+    status: str = Field(default="pending")
+    duration: int = Field(default=5)
+    created_at: datetime = Field(
+        default_factory=lambda: datetime.now(UTC),
+        sa_column=Column(DateTime(timezone=True), index=True, nullable=False),
+    )
+    executed_at: Optional[datetime] = Field(default=None)
+
+    plant: "Plant" = Relationship(back_populates="commands")

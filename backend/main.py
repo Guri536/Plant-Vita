@@ -22,7 +22,7 @@ import logging
 import os
 from contextlib import asynccontextmanager
 from datetime import timedelta
-from typing import AsyncGenerator, List, cast, Any
+from typing import AsyncGenerator, List, cast, Any, Optional
 import aiofiles
 import base64
 
@@ -36,6 +36,7 @@ from fastapi import (
     UploadFile,
     status,
     Form,
+    Request
 )
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
@@ -43,6 +44,7 @@ from jose import JWTError, jwt
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import selectinload
 from sqlmodel import SQLModel, select
+from datetime import datetime, timezone, date, UTC
 
 from auth import (
     ACCESS_TOKEN_EXPIRE_MINUTES,
@@ -54,7 +56,7 @@ from auth import (
     get_hashed_password,
     verify_password,
 )
-from models import Image, Plant, SensorReading, User
+from models import Image, Plant, SensorReading, User, Command
 from schemas import (
     ImageRead,
     ImageUploadResponse,
@@ -72,6 +74,9 @@ from schemas import (
     UserRead,
     DeviceRegister,
     DeviceRegisterResponse,
+    CommandAcknowledge,
+    CommandCreate,
+    CommandRead
 )
 from vision_client import call_vision_service, check_vision_health
 from fastapi.staticfiles import StaticFiles
@@ -219,14 +224,16 @@ async def _run_vision_and_LLM_inference(
         result = await session.execute(select(Plant).where(Plant.id == plant_id))
         plant = result.scalars().first()
 
-    if not plant or not plant.species:
+    if not plant:
         raise HTTPException(status_code=404, detail="Plant not found")
+
+    plant_species = plant.species if plant.species else "Unknown"
 
     # ── 1. Call Vision Microservice ───────────────────────────────────────────
     vision = await call_vision_service(
         jpeg_bytes,
         filename=f"plant_{plant_id}.jpg",
-        plant_species=plant.species,
+        plant_species=plant_species,
         force_universal=force_universal,
     )
 
@@ -573,7 +580,7 @@ async def register_user(
     if existing:
         raise HTTPException(status_code=400, detail="Email already registered")
 
-    db_user = User(email=user.email, hash_pass=get_hashed_password(user.password))
+    db_user = User(email=user.email.lower(), hash_pass=get_hashed_password(user.password))
     session.add(db_user)
     await session.commit()
     await session.refresh(db_user)
@@ -585,7 +592,7 @@ async def login_for_access_token(
     form_data: OAuth2PasswordRequestForm = Depends(),
     session: AsyncSession = Depends(get_session),
 ):
-    result = await session.execute(select(User).where(User.email == form_data.username))
+    result = await session.execute(select(User).where(User.email == form_data.username.lower()))
     user = result.scalars().first()
     if not user or not verify_password(form_data.password, user.hash_pass):
         raise HTTPException(
@@ -677,13 +684,24 @@ async def read_plant(
     result = await session.execute(
         select(Plant)
         .where(Plant.id == plant_id)
-        .options(selectinload(Plant.sensor_readings))  # type: ignore[arg-type]
+        .options(selectinload(Plant.sensor_readings), selectinload(Plant.images))  # type: ignore[arg-type]
     )
     plant = result.scalars().first()
     if not plant:
         raise HTTPException(status_code=404, detail="Plant not found")
     return plant
 
+@app.get("/plants/{plant_id}/settings", response_model=PlantUpdate)
+async def get_plant_settings(
+    plant_id: int,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    result = await session.execute(select(Plant).where(Plant.id == plant_id))
+    plant = result.scalars().first()
+    if not plant:
+        raise HTTPException(status_code=404, detail="Plant not found")
+    return plant
 
 @app.get("/plants/my_plants", response_model=List[PlantRead])
 async def read_my_plants(
@@ -782,8 +800,7 @@ async def create_sensor_reading(
 async def upload_plant_image(
     mac_address: str,
     background_tasks: BackgroundTasks,
-    file: UploadFile = File(...),
-    force_universal: bool = Form(False),
+    request: Request,
     session: AsyncSession = Depends(get_session),
 ):
     """
@@ -809,9 +826,12 @@ async def upload_plant_image(
         )
 
     # Read bytes
-    jpeg_bytes = await file.read()
+    jpeg_bytes = await request.body()
     if not jpeg_bytes:
         raise HTTPException(status_code=400, detail="Empty image payload")
+    
+    # Handle force_universal via Header instead of Form (Optional)
+    force_universal = request.headers.get("X-Force-Universal", "false").lower() == "true"
 
     # Create a stub Image row to get the auto-generated id before storage
     db_image = Image(
@@ -828,7 +848,6 @@ async def upload_plant_image(
     session.add(db_image)
     await session.commit()
 
-    # Kick off vision + Gemini in the background
     background_tasks.add_task(
         _run_vision_and_LLM_inference,
         image_id=cast(int, db_image.id),
@@ -1009,3 +1028,109 @@ async def get_dashboard_plants(
         )
 
     return summaries
+
+@app.post(
+    "/plants/{mac_address}/commands",
+    response_model=CommandRead,
+    tags=["commands"]
+)
+async def create_command(
+    mac_address: str,
+    payload: CommandCreate,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    # Verify plant exists and belongs to user
+    result = await session.execute(
+        select(Plant).where(Plant.mac_address == mac_address)
+    )
+    plant = result.scalars().first()
+    if not plant:
+        raise HTTPException(status_code=404, detail="Plant not found")
+    if plant.owner_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Not your plant")
+
+    # Use plant's pump_duration if not specified
+    duration = payload.duration or plant.pump_duration or 5
+
+    command = Command(
+        plant_id=cast(int, plant.id),
+        command_type=payload.command_type,
+        duration=duration,
+        status="pending"
+    )
+    session.add(command)
+    await session.commit()
+    await session.refresh(command)
+    return command
+
+
+@app.get(
+    "/plants/{mac_address}/commands",
+    response_model=Optional[CommandRead],
+    tags=["commands"]
+)
+async def get_pending_command(
+    mac_address: str,
+    session: AsyncSession = Depends(get_session),
+):
+    """ESP32 polls this. Returns the oldest pending command or null."""
+    result = await session.execute(
+        select(Plant).where(Plant.mac_address == mac_address)
+    )
+    plant = result.scalars().first()
+    if not plant:
+        raise HTTPException(status_code=404, detail="Plant not found")
+
+    cmd_result = await session.execute(
+        select(Command)
+        .where(
+            Command.plant_id == plant.id,
+            Command.status == "pending"
+        )
+        .order_by(Command.created_at.asc()) #type: ignore
+        .limit(1)
+    )
+    command = cmd_result.scalars().first()
+    return command  # Returns null if no pending commands
+
+
+@app.post(
+    "/plants/{mac_address}/commands/acknowledge",
+    response_model=CommandRead,
+    tags=["commands"]
+)
+async def acknowledge_command(
+    mac_address: str,
+    payload: CommandAcknowledge,
+    session: AsyncSession = Depends(get_session),
+):
+    """ESP32 calls this after executing a command."""
+    cmd_result = await session.execute(
+        select(Command).where(Command.id == payload.command_id)
+    )
+    command = cmd_result.scalars().first()
+    if not command:
+        raise HTTPException(status_code=404, detail="Command not found")
+
+    command.status = payload.status
+    command.executed_at = datetime.now(UTC)
+    session.add(command)
+    await session.commit()
+    await session.refresh(command)
+    return command
+
+@app.get("/plants/{plant_id}/sensors", response_model=List[SensorReadingRead], tags=["plants"])
+async def get_sensor_history(
+    plant_id: int,
+    limit: int = 24,
+    session: AsyncSession = Depends(get_session),
+):
+    result = await session.execute(
+        select(SensorReading)
+        .where(SensorReading.plant_id == plant_id)
+        .order_by(SensorReading.timestamp.desc()) #type: ignore
+        .limit(limit)
+    )
+    readings = result.scalars().all()
+    return list(reversed(readings))  # chronological order for charting

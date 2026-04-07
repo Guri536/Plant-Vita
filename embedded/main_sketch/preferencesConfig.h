@@ -29,4 +29,18 @@ void printPrefs() {
   pref.end();
 }
 
+void setPlantConfig(String wateringMode, int pumpDuration) {
+    pref.begin("plant-config", false);
+    pref.putString("watering_mode", wateringMode);
+    pref.putInt("pump_duration", pumpDuration);
+    pref.end();
+}
+
+String getWateringMode() {
+    pref.begin("plant-config", true);
+    String mode = pref.getString("watering_mode", "manual");
+    pref.end();
+    return mode;
+}
+
 #endif

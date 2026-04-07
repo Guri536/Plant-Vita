@@ -53,6 +53,7 @@ data class PlantRead(
     val id: Int,
     val name: String,
     val species: String?,
+    @SerializedName("mac_address") val macAddress: String,
     @SerializedName("moisture_threshold_min") val moistureThresholdMin: Int,
     @SerializedName("moisture_threshold_max") val moistureThresholdMax: Int,
     val indoor: Boolean?,
@@ -107,4 +108,15 @@ data class DiagnosisRead(
     @SerializedName("health_confidence") val healthConfidence: Float?,
     @SerializedName("vision_error") val visionError: String?,
     val timestamp: String
+)
+
+data class CommandRequest(
+    @SerializedName("command_type") val commandType: String = "pump",
+    val duration: Int? = null
+)
+
+data class CommandResponse(
+    val id: Int,
+    val status: String,
+    val duration: Int
 )

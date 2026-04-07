@@ -48,66 +48,48 @@ void showLogo(int32_t x, int32_t y) {
 }
 
 void showSensorData(float temp, float humi, float lux, float ds18Temp, int soilSurface, int soilRoot, int airQuality, float ppm) {
-  tft.fillScreen(PLANT_BG);
+  
+  // Only draw header once — add a static flag
+  static bool headerDrawn = false;
+  if (!headerDrawn) {
+    tft.fillScreen(PLANT_BG);
+    tft.fillRect(0, 0, 160, 20, PLANT_ACCENT);
+    tft.setTextColor(TFT_BLACK, PLANT_ACCENT);
+    tft.setTextDatum(MC_DATUM);
+    tft.drawString("PLANTVITA", 80, 10, 2);
+    tft.drawLine(0, 86, 160, 86, TFT_DARKGREY);
+    tft.setTextColor(TFT_DARKGREY, PLANT_BG);
+    tft.drawString("live sensor data", 80, 95, 1);
 
-  // Header bar
-  tft.fillRect(0, 0, 160, 20, PLANT_ACCENT);
-  tft.setTextColor(TFT_BLACK, PLANT_ACCENT);
-  tft.setTextDatum(MC_DATUM);
-  tft.drawString("PLANTVITA", 80, 10, 2);
+    // Draw static labels once
+    tft.setTextDatum(TL_DATUM);
+    tft.setTextSize(1);
+    tft.setTextColor(TFT_CYAN, PLANT_BG);
+    tft.drawString("AMB",  2, 26, 1);
+    tft.drawString("H2O",  2, 38, 1);
+    tft.drawString("LUX",  2, 50, 1);
+    tft.drawString("SOIL", 2, 62, 1);
+    tft.drawString("AIR",  2, 74, 1);
+    headerDrawn = true;
+  }
 
   tft.setTextDatum(TL_DATUM);
   tft.setTextSize(1);
 
-  // Row 1 - Ambient temp & humidity
-  tft.setTextColor(TFT_CYAN, PLANT_BG);
-  tft.drawString("AMB", 2, 26, 1);
+  // Overwrite only values — background color erases old text
   tft.setTextColor(TFT_WHITE, PLANT_BG);
-  tft.drawString(String(temp, 1) + "C  " + String(humi, 0) + "%", 28, 26, 1);
+  tft.drawString(String(temp, 1) + "C  " + String(humi, 0) + "%   ", 28, 26, 1);
+  tft.drawString(String(ds18Temp, 1) + "C      ", 28, 38, 1);
+  tft.drawString(String(lux, 0) + " lx    ", 28, 50, 1);
 
-  // Row 2 - Soil/water temp (DS18B20)
-  tft.setTextColor(TFT_CYAN, PLANT_BG);
-  tft.drawString("H2O", 2, 38, 1);
-  tft.setTextColor(TFT_WHITE, PLANT_BG);
-  tft.drawString(String(ds18Temp, 1) + "C", 28, 38, 1);
-
-  // Row 3 - Light
-  tft.setTextColor(TFT_CYAN, PLANT_BG);
-  tft.drawString("LUX", 2, 50, 1);
-  tft.setTextColor(TFT_WHITE, PLANT_BG);
-  tft.drawString(String(lux, 0) + " lx", 28, 50, 1);
-
-  // Row 4 - Soil moisture
-  tft.setTextColor(TFT_CYAN, PLANT_BG);
-  tft.drawString("SOIL", 2, 62, 1);
-
-  // Color code moisture level
   int avgMoisture = (soilSurface + soilRoot) / 2;
-  uint16_t moistureColor = TFT_GREEN;
-  if (avgMoisture < 20) moistureColor = TFT_RED;
-  else if (avgMoisture < 40) moistureColor = TFT_ORANGE;
-
+  uint16_t moistureColor = avgMoisture < 20 ? TFT_RED : avgMoisture < 40 ? TFT_ORANGE : TFT_GREEN;
   tft.setTextColor(moistureColor, PLANT_BG);
-  tft.drawString("S:" + String(soilSurface) + "% R:" + String(soilRoot) + "%", 28, 62, 1);
+  tft.drawString("S:" + String(soilSurface) + "% R:" + String(soilRoot) + "%   ", 28, 62, 1);
 
-  // Row 5 - Air quality
-  tft.setTextColor(TFT_CYAN, PLANT_BG);
-  tft.drawString("AIR", 2, 74, 1);
-
-  uint16_t airColor = TFT_GREEN;
-  if (ppm > 1000) airColor = TFT_ORANGE;
-  if (ppm > 2000) airColor = TFT_RED;
-
+  uint16_t airColor = ppm > 2000 ? TFT_RED : ppm > 1000 ? TFT_ORANGE : TFT_GREEN;
   tft.setTextColor(airColor, PLANT_BG);
-  tft.drawString(String((int)ppm) + "ppm", 28, 74, 1);
-
-  // Divider
-  tft.drawLine(0, 86, 160, 86, TFT_DARKGREY);
-
-  // Footer - scrolling status hint
-  tft.setTextColor(TFT_DARKGREY, PLANT_BG);
-  tft.setTextDatum(MC_DATUM);
-  tft.drawString("live sensor data", 80, 95, 1);
+  tft.drawString(String((int)ppm) + "ppm   ", 28, 74, 1);
 }
 
 #endif

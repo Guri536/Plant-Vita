@@ -10,6 +10,7 @@ import com.main.plantvita.data.ApiService
 import com.main.plantvita.data.PlantRead
 import com.main.plantvita.data.PlantUpdate
 import com.main.plantvita.network.RetrofitClient
+import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
 
 sealed class SetupUiState {
@@ -43,7 +44,11 @@ class PlantSetupViewModel(application: Application) : AndroidViewModel(applicati
         viewModelScope.launch {
             uiState = SetupUiState.Loading
             try {
-                val plant = api.getPlant(plantId)
+                val plantDeferred = async { api.getPlant(plantId) }
+                val imagesDeferred = async { api.getPlantImages(plantId) }
+
+                val plant = plantDeferred.await()
+                val images = imagesDeferred.await()
 
                 // Populate form fields
                 plantName = plant.name
@@ -53,10 +58,10 @@ class PlantSetupViewModel(application: Application) : AndroidViewModel(applicati
                 wateringMode = plant.wateringMode ?: "manual"
                 pumpDuration = plant.pumpDuration ?: 5
                 captureRate = plant.captureRate ?: 30
-                notificationsEnabled = plant.notificationsEnabled
+                notificationsEnabled = plant.notificationsEnabled == true
 
                 // Get latest image from history if available
-                latestImageUrl = plant.images.maxByOrNull { it.timestamp }?.imageUrl
+                latestImageUrl = images.firstOrNull()?.imageUrl
 
                 uiState = SetupUiState.Success(plant)
             } catch (e: Exception) {

@@ -18,6 +18,10 @@ bool captureInProgress = false;
 unsigned long lastCapture = 0;
 bool pendingCapture = false;  // Set by MQTT or button/screen trigger
 
+//Pump
+bool pumpActive = false;
+unsigned long pumpStartTime = 0;
+unsigned long lastCommandPoll = 0;
 
 // Timers
 unsigned long lastSensorRead = 0;
@@ -31,6 +35,8 @@ void setup() {
   pinMode(RESET_BUTTON_PIN, INPUT_PULLUP);
   pinMode(DHT_PIN, INPUT);
   pinMode(MQ135_PIN, INPUT);
+  pinMode(PUMP_PIN, OUTPUT);
+  digitalWrite(PUMP_PIN, HIGH);  // Active LOW — ensure pump is OFF on boot
   dht22.begin();
   setupSensors();
   ds18b20.begin();
@@ -141,7 +147,7 @@ void setup() {
       HTTPClient http;
       String macStr = WiFi.macAddress();
       macStr.replace(":", "");
-      
+
       String regUrl = "http://" + getServerIP() + ":8000/devices/register";
       http.begin(regUrl);
       http.addHeader("Content-Type", "application/json");
@@ -184,19 +190,19 @@ void loop() {
     delay(100);
     float soilTemp = ds18b20.getTempCByIndex(0);
 
+    pref.begin("plant-config", true);
+    String wateringMode = pref.getString("watering_mode", "manual");
+    pref.end();
+
+    checkPump(moistureRoot, wateringMode);
+
     if (isnan(tempC) || isnan(humi)) {
       Serial.println("Failed to read from DHT22 sensor!");
     } else {
-      Serial.print("Humidity: ");
-      Serial.print(humi);
-      Serial.print("%");
-
-      Serial.print("  |  ");
-
-      Serial.print("Temperature: ");
-      Serial.print(tempC);
-      Serial.println("°C");
+      Serial.printf("Humidity: %.1f%% | Temp: %.1fC\n", humi, tempC);
     }
+
+    Serial.printf("[PUMP] Active: %s | Root moisture: %d%%\n", pumpActive ? "YES" : "NO", moistureRoot);
 
     if (lux == -1) {
       Serial.println("Failed to read from BH1750 sensor!");
@@ -238,5 +244,11 @@ void loop() {
     } else {
       Serial.println("Capture failed");
     }
+  }
+
+  // Command polling — independent of sensor read timer
+  if (millis() - lastCommandPoll > COMMAND_POLL_INTERVAL) {
+    pollForCommands();
+    lastCommandPoll = millis();
   }
 }

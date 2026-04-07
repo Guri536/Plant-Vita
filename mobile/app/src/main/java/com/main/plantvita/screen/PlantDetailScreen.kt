@@ -6,13 +6,15 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Air
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Air
 import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.Co2
 import androidx.compose.material.icons.filled.DeviceThermostat
@@ -20,10 +22,11 @@ import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Grass
 import androidx.compose.material.icons.filled.Opacity
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Thermostat
+import androidx.compose.material.icons.filled.WaterDrop
 import androidx.compose.material.icons.filled.WbSunny
 import androidx.compose.material3.*
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.*
@@ -36,31 +39,51 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.viewmodel.compose.viewModel
 import coil3.compose.AsyncImage
 import com.main.plantvita.data.DiagnosisRead
 import com.main.plantvita.data.ImageRead
 import com.main.plantvita.data.SensorReadingRead
 import com.main.plantvita.viewmodel.PlantDetailUiState
 import com.main.plantvita.viewmodel.PlantDetailViewModel
+import com.main.plantvita.viewmodel.PumpState
+import com.patrykandpatrick.vico.compose.cartesian.CartesianChartHost
+import com.patrykandpatrick.vico.compose.cartesian.axis.rememberBottom
+import com.patrykandpatrick.vico.compose.cartesian.layer.rememberLineCartesianLayer
+import com.patrykandpatrick.vico.compose.cartesian.axis.rememberStart
+import com.patrykandpatrick.vico.compose.cartesian.rememberCartesianChart
+import com.patrykandpatrick.vico.core.cartesian.axis.HorizontalAxis
+import com.patrykandpatrick.vico.core.cartesian.axis.VerticalAxis
+import com.patrykandpatrick.vico.core.cartesian.data.CartesianChartModelProducer
+import com.patrykandpatrick.vico.core.cartesian.data.lineSeries
 import dev.jeziellago.compose.markdowntext.MarkdownText
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PlantDetailScreen(
     viewModel: PlantDetailViewModel,
-    onNavigateBack: () -> Unit
+    onNavigateBack: () -> Unit,
+    onNavigateToSetup: (Int) -> Unit
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val plantId = (uiState as? PlantDetailUiState.Success)?.plant?.id ?: 0
+    val plantName = (uiState as? PlantDetailUiState.Success)?.plant?.name ?: ""
+    val pumpState by viewModel.pumpState.collectAsState()
     val isRefreshing = uiState is PlantDetailUiState.Loading // Simplistic check
     val refreshState = rememberPullToRefreshState()
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Plant Details") },
+                title = { Text(plantName) },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
-                        Icon(Icons.AutoMirrored.Default.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                },
+                actions = {
+                    IconButton(onClick = { onNavigateToSetup(plantId) }) {
+                        Icon(Icons.Default.Settings, contentDescription = "Edit Plant")
                     }
                 }
             )
@@ -90,7 +113,10 @@ fun PlantDetailScreen(
                 }
 
                 is PlantDetailUiState.Success -> {
-                    DetailContent(state)
+                    DetailContent(
+                        state = state,
+                        pumpState = pumpState,
+                        onWaterNow = { mac -> viewModel.triggerPump(mac) })
                 }
             }
         }
@@ -98,7 +124,11 @@ fun PlantDetailScreen(
 }
 
 @Composable
-fun DetailContent(state: PlantDetailUiState.Success) {
+fun DetailContent(
+    state: PlantDetailUiState.Success,
+    pumpState: PumpState,
+    onWaterNow: (String) -> Unit
+) {
     val latestHealth = state.diagnosis?.detectedHealth?.lowercase()
 
     // Only show if diagnosis exists AND is not healthy
@@ -117,9 +147,11 @@ fun DetailContent(state: PlantDetailUiState.Success) {
             .verticalScroll(rememberScrollState())
     ) {
         // 1. Featured Image with Overlay
-        Box(modifier = Modifier
-            .height(300.dp)
-            .fillMaxWidth()) {
+        Box(
+            modifier = Modifier
+                .height(300.dp)
+                .fillMaxWidth()
+        ) {
             AsyncImage(
                 model = state.diagnosis?.imageUrl ?: state.recentImages.firstOrNull()?.imageUrl,
                 contentDescription = null,
@@ -161,9 +193,20 @@ fun DetailContent(state: PlantDetailUiState.Success) {
                 AiDiagnosisCard(state.diagnosis, healthColor)
             }
 
+            // Water Now button — only show in manual mode
+            if (state.plant.wateringMode == "manual") {
+                WaterNowButton(
+                    pumpState =  pumpState,
+                    onWaterNow = { onWaterNow(state.plant.macAddress) }
+                )
+            }
+
             // Environment: Now with placeholders
             val latestSensor = state.plant.sensorReadings.lastOrNull() //
             SensorSection(latestSensor)
+
+            val sensorHistory = state.sensorHistory
+            SensorChartSection(sensorHistory)
 
             // Growth History
             if (state.recentImages.isNotEmpty()) {
@@ -224,12 +267,19 @@ fun AiDiagnosisCard(diagnosis: DiagnosisRead, color: Color) {
             .animateContentSize() // Smooth expansion animation
             .clickable { expanded = !expanded }
     ) {
-        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Icon(Icons.Default.AutoAwesome, contentDescription = "AI", tint = MaterialTheme.colorScheme.primary)
+                Icon(
+                    Icons.Default.AutoAwesome,
+                    contentDescription = "AI",
+                    tint = MaterialTheme.colorScheme.primary
+                )
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
                     text = "AI Health Assessment",
@@ -287,7 +337,9 @@ fun SensorItem(
         )
     ) {
         Column(
-            modifier = Modifier.padding(12.dp).fillMaxWidth(),
+            modifier = Modifier
+                .padding(12.dp)
+                .fillMaxWidth(),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Icon(
@@ -347,24 +399,231 @@ fun SensorSection(sensor: SensorReadingRead?) {
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            SensorItem(Icons.Default.Opacity, "Soil", sensor?.soilRootPct?.let { "${it.toInt()}%" } ?: "--", Modifier.weight(1f))
-            SensorItem(Icons.Default.DeviceThermostat, "Temp", sensor?.tempC?.let { "$it°C" } ?: "--", Modifier.weight(1f))
-            SensorItem(Icons.Default.WbSunny, "Light", sensor?.lightLux?.let { "${it.toInt()} lx" } ?: "--", Modifier.weight(1f))
+            SensorItem(
+                Icons.Default.Opacity,
+                "Soil",
+                sensor?.soilRootPct?.let { "${it.toInt()}%" } ?: "--",
+                Modifier.weight(1f))
+            SensorItem(
+                Icons.Default.DeviceThermostat,
+                "Temp",
+                sensor?.tempC?.let { "$it°C" } ?: "--",
+                Modifier.weight(1f))
+            SensorItem(
+                Icons.Default.WbSunny,
+                "Light",
+                sensor?.lightLux?.let { "${it.toInt()} lx" } ?: "--",
+                Modifier.weight(1f))
         }
 
         // 2. Expanded Grid (Hidden by default)
         if (expanded) {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    SensorItem(Icons.Default.Cloud, "Humidity", sensor?.humidityPct?.let { "${it.toInt()}%" } ?: "--", Modifier.weight(1f))
-                    SensorItem(Icons.Default.Air, "Air Quality", sensor?.airQualityPct?.let { "${it.toInt()}%" } ?: "--", Modifier.weight(1f))
+                    SensorItem(
+                        Icons.Default.Cloud,
+                        "Humidity",
+                        sensor?.humidityPct?.let { "${it.toInt()}%" } ?: "--",
+                        Modifier.weight(1f))
+                    SensorItem(
+                        Icons.Default.Air,
+                        "Air Quality",
+                        sensor?.airQualityPct?.let { "${it.toInt()}%" } ?: "--",
+                        Modifier.weight(1f))
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    SensorItem(Icons.Default.Co2, "CO2 (PPM)", sensor?.airPpm?.let { "${it.toInt()}" } ?: "--", Modifier.weight(1f))
-                    SensorItem(Icons.Default.Grass, "Surface", sensor?.soilSurfacePct?.let { "${it.toInt()}%" } ?: "--", Modifier.weight(1f))
-                    SensorItem(Icons.Default.Thermostat, "Soil Temp", sensor?.soilTempC?.let { "$it°C" } ?: "--", Modifier.weight(1f))
+                    SensorItem(
+                        Icons.Default.Co2,
+                        "CO2 (PPM)",
+                        sensor?.airPpm?.let { "${it.toInt()}" } ?: "--",
+                        Modifier.weight(1f))
+                    SensorItem(
+                        Icons.Default.Grass,
+                        "Surface",
+                        sensor?.soilSurfacePct?.let { "${it.toInt()}%" } ?: "--",
+                        Modifier.weight(1f))
+                    SensorItem(
+                        Icons.Default.Thermostat,
+                        "Soil Temp",
+                        sensor?.soilTempC?.let { "$it°C" } ?: "--",
+                        Modifier.weight(1f))
                 }
             }
         }
+    }
+}
+
+@Composable
+fun WaterNowButton(
+    pumpState: PumpState,
+    onWaterNow: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.primaryContainer
+        )
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(13.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column {
+                Text(
+                    text = "Manual Watering",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    text = "Triggers pump for configured duration",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            Spacer(modifier = Modifier.width(10.dp))
+
+            Button(
+                onClick = onWaterNow,
+                enabled = pumpState is PumpState.Idle,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = when (pumpState) {
+                        is PumpState.Success -> MaterialTheme.colorScheme.primary
+                        is PumpState.Error -> MaterialTheme.colorScheme.error
+                        else -> MaterialTheme.colorScheme.primary
+                    }
+                )
+            ) {
+                when (pumpState) {
+                    is PumpState.Loading -> {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(13.dp),
+                            strokeWidth = 2.dp,
+                            color = MaterialTheme.colorScheme.onPrimary
+                        )
+                    }
+
+                    is PumpState.Success -> {
+                        Icon(
+                            Icons.Default.Check,
+                            contentDescription = null,
+                            modifier = Modifier.size(13.dp)
+                        )
+                        Spacer(modifier = Modifier.width(3.dp))
+                        Text("Sent!")
+                    }
+
+                    is PumpState.Error -> {
+                        Text("Failed")
+                    }
+
+                    else -> {
+                        Icon(
+                            Icons.Default.WaterDrop,
+                            contentDescription = null,
+                            modifier = Modifier.size(13.dp)
+                        )
+                        Spacer(modifier = Modifier.width(3.dp))
+                        Text("Water Now")
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun SensorChartSection(readings: List<SensorReadingRead>) {
+    if (readings.isEmpty()) return
+
+    val metrics = listOf(
+        "Soil Moisture (Root %)" to readings.map { it.soilRootPct },
+        "Soil Moisture (Surface %)" to readings.map { it.soilSurfacePct },
+        "Air Temp (°C)"          to readings.map { it.tempC },
+        "Humidity (%)"           to readings.map { it.humidityPct },
+        "Light (lux)"            to readings.map { it.lightLux },
+        "Soil Temp (°C)"         to readings.map { it.soilTempC },
+        "Air Quality (ppm)"      to readings.map { it.airPpm },
+    )
+
+    var selectedIndex by remember { mutableIntStateOf(0) }
+    val (label, values) = metrics[selectedIndex]
+
+    val timestamps = readings.map {
+        it.timestamp.substring(11, 16) // "HH:mm" from ISO string
+    }
+
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            SectionHeader("Sensor History")
+        }
+
+        // Chip row to pick metric
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            itemsIndexed(metrics) { index, (name, _) ->
+                FilterChip(
+                    selected = selectedIndex == index,
+                    onClick = { selectedIndex = index },
+                    label = { Text(name, style = MaterialTheme.typography.labelSmall) }
+                )
+            }
+        }
+
+        // Stats row
+        val min = values.min()
+        val max = values.max()
+        val avg = values.average().toFloat()
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceEvenly
+        ) {
+            StatBadge("Min", "%.1f".format(min))
+            StatBadge("Avg", "%.1f".format(avg))
+            StatBadge("Max", "%.1f".format(max))
+        }
+
+        // Chart
+        val modelProducer = remember { CartesianChartModelProducer() }
+
+        LaunchedEffect(selectedIndex, readings) {
+            modelProducer.runTransaction {
+                lineSeries { series(values) }
+            }
+        }
+
+        CartesianChartHost(
+            chart = rememberCartesianChart(
+                rememberLineCartesianLayer(),
+                // Update: renamed from rememberStartAxis
+                startAxis = VerticalAxis.rememberStart(),
+                // Update: renamed from rememberBottomAxis
+                bottomAxis = HorizontalAxis.rememberBottom(
+                    valueFormatter = { _, x, _ ->
+                        timestamps.getOrElse(x.toInt()) { "" }
+                    }
+                ),
+            ),
+            modelProducer = modelProducer,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(220.dp)
+        )
+    }
+}
+
+@Composable
+private fun StatBadge(label: String, value: String) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(value, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        Text(label, style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }

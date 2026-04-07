@@ -108,7 +108,6 @@ fun PlantSetupForm(viewModel: PlantSetupViewModel, plantId: Int) {
                     contentDescription = "Plant Image",
                     contentScale = ContentScale.Crop,
                     modifier = Modifier.fillMaxSize(),
-
                 )
             } else {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {

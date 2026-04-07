@@ -20,6 +20,8 @@ extern DHT dht22;
 extern BH1750 bh1750;
 extern OneWire oneWire;
 extern DallasTemperature ds18b20;
+extern bool pumpActive;
+extern unsigned long pumpStartTime;
 
 // Pin Layouts
 #define GREEN_LED_PIN 26
@@ -31,6 +33,7 @@ extern DallasTemperature ds18b20;
 #define SOIL_SURFACE_PIN 39
 #define SOIL_ROOT_PIN 34
 #define DS18B20_PIN 32
+#define PUMP_PIN 14
 
 // I2C Pins
 #define I2C_SDA_PIN 21
@@ -48,6 +51,9 @@ extern DallasTemperature ds18b20;
 #define ATMOCO2 397.13
 #define SOIL_DRY_VAL 2630
 #define SOIL_WET_VAL 1450
+#define PUMP_MAX_RUNTIME 5000
+#define PUMP_ACTIVATE_THRESHOLD 0    // % — activate below this
+#define PUMP_DEACTIVATE_THRESHOLD 80  // % — deactivate above this
 
 // Timers
 #define SETUP_TIMEOUT 120000                      // 2 min timer for hotspot timeout
@@ -61,6 +67,9 @@ extern DallasTemperature ds18b20;
 #define SERVER_PORT 8000
 #define SERVER_ENDPOINT "/plants/%s/readings/"
 #define IMAGE_ENDPOINT "/plants/%s/image/"
+#define COMMAND_POLL_INTERVAL 5000  // 5 seconds
+#define COMMAND_ENDPOINT "/plants/%s/commands"
+#define COMMAND_ACK_ENDPOINT "/plants/%s/commands/acknowledge"
 
 // ESP32-CAM UART link
 #define CAM_TX_PIN        17    // ESP32 TX → CAM RX

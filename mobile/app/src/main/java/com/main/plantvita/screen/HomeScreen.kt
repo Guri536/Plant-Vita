@@ -32,6 +32,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -46,6 +48,7 @@ import coil3.compose.AsyncImage
 import com.main.plantvita.data.PlantSummary
 import com.main.plantvita.viewmodel.HomeUiState
 import com.main.plantvita.viewmodel.HomeViewModel
+import com.main.plantvita.viewmodel.PlantDetailUiState
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -56,6 +59,8 @@ fun HomeScreen(
     onNavigateToPlantDetail: (Int) -> Unit
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val isRefreshing = uiState is HomeUiState.Loading // Simplistic check
+    val refreshState = rememberPullToRefreshState()
 
     Scaffold(
         topBar = {
@@ -77,7 +82,11 @@ fun HomeScreen(
             }
         }
     ) { paddingValues ->
-        Box(
+
+        PullToRefreshBox(
+            state = refreshState,
+            isRefreshing = isRefreshing,
+            onRefresh = { viewModel.loadDashboard() },
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)

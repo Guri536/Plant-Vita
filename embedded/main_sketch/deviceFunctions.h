@@ -55,8 +55,8 @@ void checkResetButton() {
 void smartDelay(unsigned long ms) {
   unsigned long start = millis();
   while (millis() - start < ms) {
-    checkResetButton(); 
-    delay(1);          
+    checkResetButton();
+    delay(1);
   }
 }
 
@@ -263,6 +263,7 @@ bool uploadImage(uint32_t imgLen) {
   http.begin(client, url);
   http.addHeader("Content-Type", "image/jpeg");
   http.addHeader("X-Device-MAC", WiFi.macAddress());
+  http.addHeader("X-Force-Universal", "false");
 
   // Stream directly from SPIFFS — no RAM buffer
   int httpCode = http.sendRequest("POST", &file, imgLen);
@@ -398,6 +399,130 @@ bool triggerCapture() {
   Serial.printf("Image written to SPIFFS OK — %u bytes\n", imgLen);
   captureInProgress = false;
   return uploadImage(imgLen);
+}
+
+void activatePump() {
+  if (!pumpActive) {
+    pumpActive = true;
+    pumpStartTime = millis();
+    digitalWrite(PUMP_PIN, LOW);  // Active LOW — LOW turns relay ON
+    Serial.println("[PUMP] Activated");
+    showStatus("WATERING", "Pump ON", TFT_BLUE);
+  }
+}
+
+void deactivatePump() {
+  if (pumpActive) {
+    pumpActive = false;
+    digitalWrite(PUMP_PIN, HIGH);  // HIGH turns relay OFF
+    Serial.println("[PUMP] Deactivated");
+  }
+}
+
+void checkPump(int moistureRoot, String wateringMode) {
+  // Safety cutoff — never run pump longer than PUMP_MAX_RUNTIME
+  if (pumpActive && millis() - pumpStartTime > PUMP_MAX_RUNTIME) {
+    Serial.println("[PUMP] Safety cutoff triggered — max runtime exceeded");
+    deactivatePump();
+    return;
+  }
+
+  // Only run hysteresis logic in auto mode
+  if (wateringMode != "auto") {
+    if (pumpActive) deactivatePump();  // Safety — turn off if mode switched
+    return;
+  }
+
+  if (!pumpActive && moistureRoot < PUMP_ACTIVATE_THRESHOLD) {
+    activatePump();
+  } else if (pumpActive && moistureRoot > PUMP_DEACTIVATE_THRESHOLD) {
+    deactivatePump();
+  }
+}
+
+void executePumpCommand(int duration, int commandId) {
+    Serial.printf("[CMD] Executing pump command — %d seconds\n", duration);
+    
+    // Activate pump
+    activatePump();
+    
+    // Block for duration (using smartDelay so reset button still works)
+    smartDelay(duration * 1000);
+    
+    // Deactivate pump
+    deactivatePump();
+    
+    Serial.println("[CMD] Pump command complete — acknowledging");
+
+    // Acknowledge back to backend
+    if (WiFi.status() != WL_CONNECTED) return;
+
+    String mac = WiFi.macAddress();
+    mac.replace(":", "");
+
+    char endpoint[64];
+    snprintf(endpoint, sizeof(endpoint), COMMAND_ACK_ENDPOINT, mac.c_str());
+
+    HTTPClient http;
+    String url = "http://" + getServerIP() + ":" + SERVER_PORT + endpoint;
+    http.begin(url);
+    http.addHeader("Content-Type", "application/json");
+
+    StaticJsonDocument<64> doc;
+    doc["command_id"] = commandId;
+    doc["status"] = "executed";
+
+    String payload;
+    serializeJson(doc, payload);
+
+    int httpCode = http.POST(payload);
+    Serial.printf("[CMD] Acknowledge response: %d\n", httpCode);
+    http.end();
+}
+
+void pollForCommands() {
+    if (WiFi.status() != WL_CONNECTED) return;
+
+    String mac = WiFi.macAddress();
+    mac.replace(":", "");
+
+    char endpoint[64];
+    snprintf(endpoint, sizeof(endpoint), COMMAND_ENDPOINT, mac.c_str());
+
+    HTTPClient http;
+    String url = "http://" + getServerIP() + ":" + SERVER_PORT + endpoint;
+    http.begin(url);
+
+    int httpCode = http.GET();
+
+    if (httpCode == 200) {
+        String response = http.getString();
+        
+        // null response means no pending commands
+        if (response == "null") {
+            http.end();
+            return;
+        }
+
+        StaticJsonDocument<128> doc;
+        DeserializationError error = deserializeJson(doc, response);
+        
+        if (!error) {
+            int commandId = doc["id"];
+            String commandType = doc["command_type"].as<String>();
+            int duration = doc["duration"];
+
+            Serial.printf("[CMD] Received command: %s (id=%d)\n", 
+                         commandType.c_str(), commandId);
+
+            if (commandType == "pump") {
+                executePumpCommand(duration, commandId);
+            }
+            // Future command types can be added here
+        }
+    }
+
+    http.end();
 }
 
 #endif

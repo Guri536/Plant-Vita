@@ -167,3 +167,23 @@ class ImageUploadResponse(BaseModel):
     id: int
     image_url: str
     message: str = "Image received. Vision analysis running in background."
+    
+class CommandCreate(BaseModel):
+    command_type: str = "pump"
+    duration: Optional[int] = None  # if None, uses plant's pump_duration
+
+class CommandRead(BaseModel):
+    id: int
+    plant_id: int
+    command_type: str
+    status: str
+    duration: int
+    created_at: datetime
+    executed_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+class CommandAcknowledge(BaseModel):
+    command_id: int
+    status: str = "executed"  # executed / failed

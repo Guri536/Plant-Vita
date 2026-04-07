@@ -4,9 +4,11 @@ import retrofit2.http.Body
 import retrofit2.http.Field
 import retrofit2.http.FormUrlEncoded
 import retrofit2.http.GET
+import retrofit2.http.Header
 import retrofit2.http.PATCH
 import retrofit2.http.POST
 import retrofit2.http.Path
+import retrofit2.http.Query
 
 interface ApiService {
     @FormUrlEncoded
@@ -42,4 +44,19 @@ interface ApiService {
 
     @GET("plants/{plant_id}/images/")
     suspend fun getPlantImages(@Path("plant_id") plantId: Int): List<ImageRead>
+
+    @POST("plants/{mac}/commands")
+    suspend fun createCommand(
+        @Path("mac") mac: String,
+        @Body body: CommandRequest
+    ): CommandResponse
+
+    @GET("plants/{plant_id}/settings")
+    suspend fun getPlantSettings(@Path("plant_id") plantId: Int): PlantUpdate
+
+    @GET("plants/{plant_id}/sensors")
+    suspend fun getSensorHistory(
+        @Path("plant_id") plantId: Int,
+        @Query("limit") limit: Int = 24
+    ): List<SensorReadingRead>
 }

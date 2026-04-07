@@ -132,7 +132,10 @@ fun AppNavigation(viewModel: AuthViewModel, homeViewModel: HomeViewModel) {
             )
             PlantDetailScreen(
                 viewModel = viewModel,
-                onNavigateBack = { navController.popBackStack() }
+                onNavigateBack = { navController.popBackStack() },
+                onNavigateToSetup = { id ->  // ADD THIS
+                    navController.navigate(Routes.createSetupPlantRoute(id))
+                }
             )
         }
     }
