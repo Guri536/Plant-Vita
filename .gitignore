@@ -2,6 +2,7 @@
 .vs/
 .vscode/settings.json
 received_images
+__pycache__
 
 /package-lock.json
 /node_modules/
