@@ -53,6 +53,7 @@ class PlantCreate(BaseModel):
     watering_mode: Optional[str] = "manual"
     pump_duration: Optional[int] = 5
 
+
 class PlantRead(PlantCreate):
     id: int
     owner_id: int

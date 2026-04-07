@@ -19,6 +19,7 @@ Changes vs original:
 from __future__ import annotations
 
 import logging
+from pydantic import BaseModel
 import os
 from contextlib import asynccontextmanager
 from datetime import timedelta
@@ -43,7 +44,7 @@ from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from jose import JWTError, jwt
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import selectinload
-from sqlmodel import SQLModel, select
+from sqlmodel import SQLModel, select, text
 from datetime import datetime, timezone, date, UTC
 
 from auth import (

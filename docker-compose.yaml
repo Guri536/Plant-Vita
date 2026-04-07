@@ -1,3 +1,5 @@
+version: "3.9"
+
 services:
   db:
     image: postgres:15-alpine
@@ -30,6 +32,7 @@ services:
       VISION_TIMEOUT: ${VISION_TIMEOUT:-60}
       PYTHONUNBUFFERED: 1
       PYTHONIOENCODING: UTF-8
+      GEMINI_KEY: ${GEMINI_KEY}
     tty: true
     stdin_open: true
     depends_on:
@@ -51,11 +54,15 @@ services:
     environment:
       NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
       WATCHPACK_POLLING: "true"
+
+      NEXTAUTH_URL: http://localhost:${FRONTEND_PORT}
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET}
     depends_on:
       - backend
 
   adminer:
     image: adminer
+    container_name: plantvita_adminer
     restart: always
     ports:
       - "8080:8080"
