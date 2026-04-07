@@ -78,7 +78,7 @@ extern unsigned long pumpStartTime;
 #define RX_BUFFER_SIZE 1024
 
 // Capture intervals
-#define CAPTURE_INTERVAL  15000    // 30 mins in ms
+#define CAPTURE_INTERVAL  300000    // 30 mins in ms
 
 // Framing protocol — must match CAM sketch
 #define FRAME_START_1     0xFF

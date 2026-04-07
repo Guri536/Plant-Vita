@@ -22,13 +22,12 @@ class User(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     email: str = Field(index=True, unique=True)
     hash_pass: Optional[str] = Field(default=None)
-    login_type: str = Field(default="manual")
 
     plants: List["Plant"] = Relationship(back_populates="owner")
 
 
 class Plant(SQLModel, table=True):
-    __tablename__ = "plant"
+    __tablename__: Any = "plant"
 
     id: Optional[int] = Field(default=None, primary_key=True)
     owner_id: int = Field(foreign_key="users.id")
@@ -66,7 +65,7 @@ class Plant(SQLModel, table=True):
 
 
 class SensorReading(SQLModel, table=True):
-    __tablename__ = "sensorreading"
+    __tablename__: Any = "sensorreading"
 
     id: Optional[int] = Field(default=None, primary_key=True)
 
