@@ -1,24 +1,23 @@
 import { NextResponse } from "next/server";
 
+const BACKEND_URL = process.env.BACKEND_URL || "http://backend:8000";
+
 export async function POST(req) {
   try {
-    const { name, email, password } = await req.json();
+    const { email, password } = await req.json();
 
     if (!email || !password) {
       return NextResponse.json(
-        { error: "Missing email or password" },
-        { status: 400 },
+        { error: "Email and password are required" },
+        { status: 400 }
       );
     }
 
-    const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
-
-    const res = await fetch(`${apiUrl}/register`, {
+    const res = await fetch(`${BACKEND_URL}/register`, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ email, password }),
+      headers: { "Content-Type": "application/json" },
+      // UserCreate schema only has email + password (no name field)
+      body: JSON.stringify({ email: email.toLowerCase(), password }),
     });
 
     const data = await res.json();
@@ -26,16 +25,13 @@ export async function POST(req) {
     if (!res.ok) {
       return NextResponse.json(
         { error: data.detail || "Registration failed" },
-        { status: res.status },
+        { status: res.status }
       );
     }
 
-    return NextResponse.json({ success: true, user: data });
+    return NextResponse.json(data);
   } catch (err) {
-    console.error("REGISTER ERROR:", err);
-    return NextResponse.json(
-      { error: "Internal Server Error" },
-      { status: 500 },
-    );
+    console.error("[register route] error:", err);
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }
