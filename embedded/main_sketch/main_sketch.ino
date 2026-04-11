@@ -186,6 +186,8 @@ void loop() {
     float ppm = getPPM();
     int moistureSurface = getSoilMoisture(SOIL_SURFACE_PIN);
     int moistureRoot = getSoilMoisture(SOIL_ROOT_PIN);
+    moistureSurface = 82;
+    moistureRoot = 92;
     ds18b20.requestTemperatures();
     delay(100);
     float soilTemp = ds18b20.getTempCByIndex(0);

@@ -360,7 +360,7 @@ bool triggerCapture() {
       timeout = millis();  // Reset timeout on every byte
     }
 
-    if (millis() - timeout > 5000) {
+    if (millis() - timeout > 10000) {
       Serial.printf("Timeout at byte %u of %u\n", received, imgLen);
       file.close();
       SPIFFS.remove("/capture.jpg");

@@ -37,7 +37,7 @@ from fastapi import (
     UploadFile,
     status,
     Form,
-    Request
+    Request,
 )
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
@@ -77,7 +77,7 @@ from schemas import (
     DeviceRegisterResponse,
     CommandAcknowledge,
     CommandCreate,
-    CommandRead
+    CommandRead,
 )
 from vision_client import call_vision_service, check_vision_health
 from fastapi.staticfiles import StaticFiles
@@ -130,7 +130,12 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:8010", "http://127.0.0.1:8010"],
+    allow_origins=[
+        "http://localhost:3000",  # Add this (Next.js default)
+        "http://127.0.0.1:3000",  # Add this
+        "http://localhost:8010",
+        "http://127.0.0.1:8010",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -581,7 +586,9 @@ async def register_user(
     if existing:
         raise HTTPException(status_code=400, detail="Email already registered")
 
-    db_user = User(email=user.email.lower(), hash_pass=get_hashed_password(user.password))
+    db_user = User(
+        email=user.email.lower(), hash_pass=get_hashed_password(user.password)
+    )
     session.add(db_user)
     await session.commit()
     await session.refresh(db_user)
@@ -593,7 +600,9 @@ async def login_for_access_token(
     form_data: OAuth2PasswordRequestForm = Depends(),
     session: AsyncSession = Depends(get_session),
 ):
-    result = await session.execute(select(User).where(User.email == form_data.username.lower()))
+    result = await session.execute(
+        select(User).where(User.email == form_data.username.lower())
+    )
     user = result.scalars().first()
     if not user or not verify_password(form_data.password, user.hash_pass):
         raise HTTPException(
@@ -692,6 +701,7 @@ async def read_plant(
         raise HTTPException(status_code=404, detail="Plant not found")
     return plant
 
+
 @app.get("/plants/{plant_id}/settings", response_model=PlantUpdate)
 async def get_plant_settings(
     plant_id: int,
@@ -703,6 +713,7 @@ async def get_plant_settings(
     if not plant:
         raise HTTPException(status_code=404, detail="Plant not found")
     return plant
+
 
 @app.get("/plants/my_plants", response_model=List[PlantRead])
 async def read_my_plants(
@@ -830,9 +841,11 @@ async def upload_plant_image(
     jpeg_bytes = await request.body()
     if not jpeg_bytes:
         raise HTTPException(status_code=400, detail="Empty image payload")
-    
+
     # Handle force_universal via Header instead of Form (Optional)
-    force_universal = request.headers.get("X-Force-Universal", "false").lower() == "true"
+    force_universal = (
+        request.headers.get("X-Force-Universal", "false").lower() == "true"
+    )
 
     # Create a stub Image row to get the auto-generated id before storage
     db_image = Image(
@@ -869,14 +882,8 @@ async def upload_plant_image(
 BASE_URL = "http://192.168.137.1:8000"
 
 
-@app.get(
-    "/plants/{plant_id}/images/", 
-    response_model=List[ImageRead]
- )
-async def get_plant_images(
-    plant_id: int, 
-    session: AsyncSession = Depends(get_session)
-):
+@app.get("/plants/{plant_id}/images/", response_model=List[ImageRead])
+async def get_plant_images(plant_id: int, session: AsyncSession = Depends(get_session)):
     result = await session.execute(
         select(Image)
         .where(Image.plant_id == plant_id)
@@ -912,7 +919,7 @@ async def get_latest_diagnosis(
     result = await session.execute(
         select(Image)
         .where(Image.plant_id == plant_id)
-        .order_by(Image.timestamp.desc()) # type: ignore[attr-defined]
+        .order_by(Image.timestamp.desc())  # type: ignore[attr-defined]
         .limit(1)
     )
     img = result.scalars().first()
@@ -982,7 +989,7 @@ async def get_dashboard_plants(
         img_result = await session.execute(
             select(Image)
             .where(Image.plant_id == p.id)
-            .order_by(Image.timestamp.desc()) # type: ignore[attr-defined]
+            .order_by(Image.timestamp.desc())  # type: ignore[attr-defined]
             .limit(1)
         )
         latest_img = img_result.scalars().first()
@@ -1001,7 +1008,7 @@ async def get_dashboard_plants(
         sensor_result = await session.execute(
             select(SensorReading)
             .where(SensorReading.plant_id == p.id)
-            .order_by(SensorReading.timestamp.desc()) # type: ignore[attr-defined]
+            .order_by(SensorReading.timestamp.desc())  # type: ignore[attr-defined]
             .limit(1)
         )
         latest_sensor = sensor_result.scalars().first()
@@ -1011,7 +1018,10 @@ async def get_dashboard_plants(
         moisture = None
         if latest_sensor:
             moisture = latest_sensor.soil_root_pct
-            if moisture < p.moisture_threshold_min or moisture > p.moisture_threshold_max:
+            if (
+                moisture < p.moisture_threshold_min
+                or moisture > p.moisture_threshold_max
+            ):
                 is_critical = True
 
         summaries.append(
@@ -1030,10 +1040,9 @@ async def get_dashboard_plants(
 
     return summaries
 
+
 @app.post(
-    "/plants/{mac_address}/commands",
-    response_model=CommandRead,
-    tags=["commands"]
+    "/plants/{mac_address}/commands", response_model=CommandRead, tags=["commands"]
 )
 async def create_command(
     mac_address: str,
@@ -1058,7 +1067,7 @@ async def create_command(
         plant_id=cast(int, plant.id),
         command_type=payload.command_type,
         duration=duration,
-        status="pending"
+        status="pending",
     )
     session.add(command)
     await session.commit()
@@ -1069,7 +1078,7 @@ async def create_command(
 @app.get(
     "/plants/{mac_address}/commands",
     response_model=Optional[CommandRead],
-    tags=["commands"]
+    tags=["commands"],
 )
 async def get_pending_command(
     mac_address: str,
@@ -1085,11 +1094,8 @@ async def get_pending_command(
 
     cmd_result = await session.execute(
         select(Command)
-        .where(
-            Command.plant_id == plant.id,
-            Command.status == "pending"
-        )
-        .order_by(Command.created_at.asc()) #type: ignore
+        .where(Command.plant_id == plant.id, Command.status == "pending")
+        .order_by(Command.created_at.asc())  # type: ignore
         .limit(1)
     )
     command = cmd_result.scalars().first()
@@ -1099,7 +1105,7 @@ async def get_pending_command(
 @app.post(
     "/plants/{mac_address}/commands/acknowledge",
     response_model=CommandRead,
-    tags=["commands"]
+    tags=["commands"],
 )
 async def acknowledge_command(
     mac_address: str,
@@ -1121,7 +1127,12 @@ async def acknowledge_command(
     await session.refresh(command)
     return command
 
-@app.get("/plants/{plant_id}/sensors", response_model=List[SensorReadingRead], tags=["plants"])
+
+@app.get(
+    "/plants/{plant_id}/sensors",
+    response_model=List[SensorReadingRead],
+    tags=["plants"],
+)
 async def get_sensor_history(
     plant_id: int,
     limit: int = 24,
@@ -1130,7 +1141,7 @@ async def get_sensor_history(
     result = await session.execute(
         select(SensorReading)
         .where(SensorReading.plant_id == plant_id)
-        .order_by(SensorReading.timestamp.desc()) #type: ignore
+        .order_by(SensorReading.timestamp.desc())  # type: ignore
         .limit(limit)
     )
     readings = result.scalars().all()
