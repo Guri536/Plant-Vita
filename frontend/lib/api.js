@@ -11,10 +11,19 @@
  *   const plants = await apiFetch("/dashboard/plants", session?.accessToken);
  */
 
-const API_URL =
-  process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, "") ||
-  "http://localhost:8000";
-
+const API_URL = (() => {
+  // Server-side (SSR / Route Handlers): talk directly to the backend service
+  if (typeof window === "undefined") {
+    return (
+      process.env.BACKEND_URL?.replace(/\/$/, "") || "http://localhost:8000"
+    );
+  }
+  // Client-side (browser): must use a publicly reachable URL
+  return (
+    process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, "") ||
+    "http://localhost:8000"
+  );
+})();
 /**
  * @param {string} path        - e.g. "/dashboard/plants"
  * @param {string|null} token  - FastAPI JWT access token

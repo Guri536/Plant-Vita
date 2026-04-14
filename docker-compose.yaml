@@ -21,7 +21,7 @@ services:
     volumes:
       - ./backend:/app/backend
     working_dir: /app/backend
-    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+    command: tail -f /dev/null
     ports:
       - "${SERVER_PORT}:8000"
     env_file:
@@ -33,6 +33,7 @@ services:
       PYTHONUNBUFFERED: 1
       PYTHONIOENCODING: UTF-8
       GEMINI_KEY: ${GEMINI_KEY}
+      SECRET_KEY: ${SECRET_KEY}
       CORS_ORIGINS: "http://localhost:${FRONTEND_PORT},http://127.0.0.1:${FRONTEND_PORT}"
     tty: true
     stdin_open: true
@@ -40,7 +41,10 @@ services:
       - db
 
   frontend:
-    build: ./frontend
+    build:
+      context: ./frontend
+      args:                                      
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
     container_name: plantvita_frontend
     restart: always
     volumes:
@@ -48,7 +52,7 @@ services:
       - /app/frontend/node_modules
       - /app/frontend/.next
     working_dir: /app/frontend
-    command: npm run dev -- -H 0.0.0.0 -p 3000
+    command: tail -f /dev/null
     ports:
       - "${FRONTEND_PORT}:3000"
     environment:
@@ -60,6 +64,7 @@ services:
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
       API_SECRET_KEY: ${API_SECRET_KEY}
+      SECRET_KEY: ${SECRET_KEY}
     depends_on:
       - backend
 

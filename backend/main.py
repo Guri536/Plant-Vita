@@ -131,10 +131,10 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "http://localhost:3000",  # Add this (Next.js default)
-        "http://127.0.0.1:3000",  # Add this
+        "http://localhost:3000", 
+        "http://127.0.0.1:3000",  
         "http://localhost:8010",
-        "http://127.0.0.1:8010",
+        "http://127.0.0.1:8010"
     ],
     allow_credentials=True,
     allow_methods=["*"],

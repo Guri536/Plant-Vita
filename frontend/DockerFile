@@ -2,6 +2,9 @@ FROM node:25.9-alpine3.22
 
 WORKDIR /app/frontend
 
+ARG NEXT_PUBLIC_API_URL
+ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
+
 COPY package*.json ./
 RUN npm install
 
@@ -12,4 +15,4 @@ RUN chown -R node:node /app/frontend
 USER node
 EXPOSE 3000
 
-CMD ["npm", "run", "dev", "--", "-H", "0.0.0.0", "-p", "3000"]
+# CMD ["npm", "run", "dev", "--", "-H", "0.0.0.0", "-p", "3000"]
