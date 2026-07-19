@@ -1,4 +1,12 @@
 theme: jekyll-theme-minimal
 
 title: Plant-Vita
-description: Smart Gardener
+description: >
+  Smart Gardener powered by IoT, AI and Cloud Computing
+
+logo: assets/NameLogo.png
+
+show_downloads: false
+
+github:
+  repository_url: https://github.com/username/Plant-Vita

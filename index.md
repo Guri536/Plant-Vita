@@ -1,10 +1,26 @@
 ---
 layout: default
-title: Plant-Vita
+title: Home
 ---
 
-{% capture readme %}
-{% include_relative README.md %}
-{% endcapture %}
+# Plant-Vita
 
-{{ readme | markdownify }}
+Smart Gardener using IoT + AI
+
+---
+
+## Features
+
+- Environmental Monitoring
+- Automatic Irrigation
+- AI Disease Detection
+- Analytics Dashboard
+
+---
+
+## Documentation
+
+- [Architecture](architecture.md)
+- [Backend](backend.md)
+- [Frontend](frontend.md)
+- [Embedded](embedded.md)

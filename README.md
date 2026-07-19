@@ -1,3 +1,8 @@
+---
+layout: default
+title: base
+permalink: /
+---
 # **Plant-Vita**
 
 ![Plant Vita Logo](assets/NameLogo.png)
