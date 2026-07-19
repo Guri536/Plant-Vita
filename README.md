@@ -24,10 +24,10 @@ The system operates on a closed-loop architecture that regulates plant environme
 
 The technical infrastructure follows a hub-and-spoke model, ensuring robust communication between edge devices and the user interface.
 
-1. [**Hardware Layer:**](embedded/README.md) The physical node consists of an ESP32 microcontroller serving as the central processing unit, interfacing with capacitive soil sensors, environmental sensors, and an ESP32-CAM module.
-2. [**Backend Infrastructure:**](backend/README.md) A central server acts as the message broker and logic handler. It manages MQTT communication for real-time telemetry, processes API requests, and stores time-series data and image history in a relational database.
-3. [**Intelligence Layer:**](processing_service/README.md) Raw data is processed into actionable insights using cloud-based inference for disease diagnosis and local algorithms for growth tracking.
-4. [**Application Layer:**](frontend/README.md) A unified frontend application allows users to manage plant profiles, view analytical graphs, and receive critical status alerts.
+1. [**Hardware Layer:**](embedded) The physical node consists of an ESP32 microcontroller serving as the central processing unit, interfacing with capacitive soil sensors, environmental sensors, and an ESP32-CAM module.
+2. [**Backend Infrastructure:**](backend) A central server acts as the message broker and logic handler. It manages MQTT communication for real-time telemetry, processes API requests, and stores time-series data and image history in a relational database.
+3. [**Intelligence Layer:**](processing_service) Raw data is processed into actionable insights using cloud-based inference for disease diagnosis and local algorithms for growth tracking.
+4. [**Application Layer:**](frontend) A unified frontend application allows users to manage plant profiles, view analytical graphs, and receive critical status alerts.
 
 ## **Technology Stack**
 
