@@ -6,6 +6,25 @@ description: >
 
 logo: assets/NameLogo.png
 
+nav:
+  - title: Home
+    url: /
+
+  - title: Backend
+    url: /backend/
+
+  - title: Frontend
+    url: /frontend/
+
+  - title: Mobile
+    url: /mobile/
+
+  - title: Embedded
+    url: /embedded/
+
+  - title: AI Processing
+    url: /processing_service/
+
 show_downloads: false
 
 github:

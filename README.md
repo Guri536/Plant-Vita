@@ -47,5 +47,5 @@ The technical infrastructure follows a hub-and-spoke model, ensuring robust comm
 
 **Artificial Intelligence**
 
-- **Vision Analysis:** Google Gemini API
+- **Vision Analysis:** OpenRouter API
 - **Image Processing:** OpenCV

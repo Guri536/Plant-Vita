@@ -1,10 +1,9 @@
 <nav class="navbar">
-  <a href="{{ '/' | relative_url }}">Home</a>
-  <a href="{{ '/backend/' | relative_url }}">Backend</a>
-  <a href="{{ '/frontend/' | relative_url }}">Frontend</a>
-  <a href="{{ '/mobile/' | relative_url }}">Mobile</a>
-  <a href="{{ '/embedded/' | relative_url }}">Embedded</a>
-  <a href="{{ '/processing_service/' | relative_url }}">Processing</a>
+{% for item in site.nav %}
+  <a href="{{ item.url | relative_url }}">
+    {{ item.title }}
+  </a>
+{% endfor %}
 </nav>
 
 <hr>
