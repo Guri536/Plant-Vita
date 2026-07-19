@@ -10,16 +10,17 @@
 
 // true  = talking to ESP32-38 pin (production)
 // false = talking to PC Serial monitor (development)
-#define PRODUCTION_MODE false
+#define PRODUCTION_MODE true
 
-#define CAM_BAUD_PRODUCTION 921600
-#define CAM_BAUD_DEBUG 115200
+#define CAM_BAUD_PRODUCTION 57600
+#define CAM_BAUD_DEBUG 57600
 
 #include "config.h"
 
 void setup() {
   if (PRODUCTION_MODE) {
     Serial.begin(CAM_BAUD_PRODUCTION);
+    Serial.println("CAM booting");
   } else {
     Serial.begin(CAM_BAUD_DEBUG);
     Serial.println("CAM booting — DEBUG MODE");
@@ -76,7 +77,7 @@ void captureAndSend() {
     debugPrint("Capture failed — no frame buffer");
     // Send error signal so ESP32 doesn't hang waiting
     Serial.write(0xFF);
-    Serial.write(0xEE); // Error marker
+    Serial.write(0xEE);  // Error marker
     return;
   }
 
@@ -91,26 +92,30 @@ void captureAndSend() {
   // --- Send framed response ---
 
   // Start marker
-  Serial.write(START_MARKER_1); // 0xFF
-  Serial.write(START_MARKER_2); // 0xAA
+  Serial.write(START_MARKER_1);  // 0xFF
+  Serial.write(START_MARKER_2);  // 0xAA
 
   // Image length — 4 bytes big-endian uint32
   uint32_t len = fb->len;
   Serial.write((len >> 24) & 0xFF);
   Serial.write((len >> 16) & 0xFF);
-  Serial.write((len >> 8)  & 0xFF);
-  Serial.write((len)       & 0xFF);
+  Serial.write((len >> 8) & 0xFF);
+  Serial.write((len)&0xFF);
 
-  // Raw JPEG bytes
+   // Raw JPEG bytes
   Serial.write(fb->buf, fb->len);
 
+  Serial.flush();
   // End marker
-  Serial.write(END_MARKER_1); // 0xFF
-  Serial.write(END_MARKER_2); // 0xBB
+  Serial.write(END_MARKER_1);  // 0xFF
+  Serial.write(END_MARKER_2);  // 0xBB
+
 
   // Checksum
   Serial.write(checksum);
 
+  Serial.flush();
+  delay(50);
   // Return buffer to camera immediately
   esp_camera_fb_return(fb);
 

@@ -146,6 +146,8 @@ class Command(SQLModel, table=True):
         default_factory=lambda: datetime.now(UTC),
         sa_column=Column(DateTime(timezone=True), index=True, nullable=False),
     )
-    executed_at: Optional[datetime] = Field(default=None)
-
+    executed_at: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), nullable=True)
+    )
     plant: "Plant" = Relationship(back_populates="commands")

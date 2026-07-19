@@ -52,7 +52,7 @@ void setup() {
   showLogo(66, 20);
   delay(2000);
 
-  Serial2.setRxBufferSize(4096);
+  Serial2.setRxBufferSize(8192);
   Serial2.begin(CAM_UART_BAUD, SERIAL_8N1, CAM_RX_PIN, CAM_TX_PIN);
   Serial.println("CAM link ready on GPIO16/17");
 
@@ -186,8 +186,7 @@ void loop() {
     float ppm = getPPM();
     int moistureSurface = getSoilMoisture(SOIL_SURFACE_PIN);
     int moistureRoot = getSoilMoisture(SOIL_ROOT_PIN);
-    moistureSurface = 82;
-    moistureRoot = 92;
+
     ds18b20.requestTemperatures();
     delay(100);
     float soilTemp = ds18b20.getTempCByIndex(0);

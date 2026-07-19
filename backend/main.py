@@ -862,13 +862,13 @@ async def upload_plant_image(
     session.add(db_image)
     await session.commit()
 
-    background_tasks.add_task(
-        _run_vision_and_LLM_inference,
-        image_id=cast(int, db_image.id),
-        jpeg_bytes=jpeg_bytes,
-        plant_id=cast(int, plant.id),
-        force_universal=force_universal,
-    )
+    # background_tasks.add_task(
+    #     _run_vision_and_LLM_inference,
+    #     image_id=cast(int, db_image.id),
+    #     jpeg_bytes=jpeg_bytes,
+    #     plant_id=cast(int, plant.id),
+    #     force_universal=force_universal,
+    # )
 
     return ImageUploadResponse(
         id=cast(int, db_image.id),
@@ -1028,6 +1028,7 @@ async def get_dashboard_plants(
             PlantSummary(
                 id=cast(int, p.id),
                 name=p.name,
+                mac_address=p.mac_address,
                 species=p.species,
                 latest_image_url=final_image_url,
                 latest_moisture_pct=moisture,

@@ -60,7 +60,7 @@ bool initCamera() {
   config.grab_mode    = CAMERA_GRAB_WHEN_EMPTY;
   config.fb_location  = CAMERA_FB_IN_PSRAM; // 4MB PSRAM confirmed
   config.frame_size   = FRAMESIZE_SXGA;     // 1280x1024 — closest to target
-  config.jpeg_quality = 12;                 // 0=best, 63=worst. 12 is good balance
+  config.jpeg_quality = 15;                 // 0=best, 63=worst. 12 is good balance
   config.fb_count     = 1;                  // Single buffer — matches architecture
 
   esp_err_t err = esp_camera_init(&config);

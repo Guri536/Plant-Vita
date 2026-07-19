@@ -49,7 +49,7 @@ extern unsigned long pumpStartTime;
 #define PARA 110.47       // Curve parameter a for CO2
 #define PARB -2.862       // Curve parameter b for CO2
 #define ATMOCO2 397.13
-#define SOIL_DRY_VAL 2630
+#define SOIL_DRY_VAL 2700
 #define SOIL_WET_VAL 1450
 #define PUMP_MAX_RUNTIME 5000
 #define PUMP_ACTIVATE_THRESHOLD 0    // % — activate below this
@@ -74,7 +74,7 @@ extern unsigned long pumpStartTime;
 // ESP32-CAM UART link
 #define CAM_TX_PIN        17    // ESP32 TX → CAM RX
 #define CAM_RX_PIN        16    // ESP32 RX ← CAM TX
-#define CAM_UART_BAUD     115200
+#define CAM_UART_BAUD     57600
 #define RX_BUFFER_SIZE 1024
 
 // Capture intervals

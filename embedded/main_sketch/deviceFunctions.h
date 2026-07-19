@@ -76,7 +76,7 @@ void handleLoginFailure(String reason) {
   Serial.println("\nWiFi Connection Failed! Reason: " + reason);
   Serial.println("Erasing bad credentials and restarting...");
 
-  clearPreferences("wifi-creds");
+  // clearPreferences("wifi-creds");
 
   for (int i = 0; i < 10; i++) {
     digitalWrite(RED_LED_PIN, PIN_LED_ON);
@@ -284,122 +284,142 @@ bool uploadImage(uint32_t imgLen) {
 
 bool triggerCapture() {
   captureInProgress = true;
+
+  // Flush any stale bytes before sending command
   while (Serial2.available()) Serial2.read();
-  delay(50);
 
   Serial.println("Sending CAPTURE to CAM...");
   Serial2.println("CAPTURE");
 
-  // Wait for start marker — timeout 10 seconds
-  // (camera needs time to capture and start sending)
-  unsigned long timeout = millis();
-  bool markerFound = false;
-  uint8_t prev = 0;
-
-  while (millis() - timeout < 10000) {
-    if (Serial2.available()) {
-      uint8_t b = Serial2.read();
-
-      if (prev == FRAME_START_1 && b == FRAME_START_2) {
-        Serial.println("Start marker received");
-        markerFound = true;
-        break;
-      }
-      if (prev == FRAME_START_1 && b == FRAME_ERROR_2) {
-        Serial.println("CAM reported capture error");
-        captureInProgress = false;
-        return false;
-      }
-      prev = b;
-      timeout = millis();  // Reset on each byte received
-    }
-  }
-
-  if (!markerFound) {
+  // ── 1. Wait for start marker (0xFF 0xAA) or error (0xFF 0xEE) ──
+  Serial2.setTimeout(15000);
+  uint8_t marker[2];
+  if (Serial2.readBytes(marker, 2) < 2) {
     Serial.println("Timeout waiting for start marker");
     captureInProgress = false;
     return false;
   }
 
-  // Reset timeout before waiting for length bytes
-  timeout = millis();
-  while (Serial2.available() < 4) {
-    if (millis() - timeout > 5000) {
-      Serial.println("Timeout waiting for length bytes");
-      captureInProgress = false;
-      return false;
-    }
+  if (marker[0] == FRAME_START_1 && marker[1] == FRAME_ERROR_2) {
+    Serial.println("CAM reported capture error");
+    captureInProgress = false;
+    return false;
   }
 
-  uint32_t imgLen = 0;
-  imgLen |= (uint32_t)Serial2.read() << 24;
-  imgLen |= (uint32_t)Serial2.read() << 16;
-  imgLen |= (uint32_t)Serial2.read() << 8;
-  imgLen |= (uint32_t)Serial2.read();
+  if (marker[0] != FRAME_START_1 || marker[1] != FRAME_START_2) {
+    Serial.printf("Unexpected marker: 0x%02X 0x%02X\n", marker[0], marker[1]);
+    captureInProgress = false;
+    return false;
+  }
+
+  Serial.println("Start marker received");
+
+  // ── 2. Read 4-byte image length (big-endian) ────────────────────
+  Serial2.setTimeout(5000);
+  uint8_t lenBytes[4];
+  if (Serial2.readBytes(lenBytes, 4) < 4) {
+    Serial.println("Timeout waiting for length bytes");
+    captureInProgress = false;
+    return false;
+  }
+
+  uint32_t imgLen = ((uint32_t)lenBytes[0] << 24) |
+                    ((uint32_t)lenBytes[1] << 16) |
+                    ((uint32_t)lenBytes[2] << 8)  |
+                    ((uint32_t)lenBytes[3]);
 
   Serial.printf("Expecting %u bytes\n", imgLen);
 
-  if (imgLen > 1000000) {
-    Serial.println("Image exceeds SPIFFS capacity — aborting");
+  if (imgLen == 0 || imgLen > 1000000) {
+    Serial.printf("Invalid image length: %u — aborting\n", imgLen);
+    captureInProgress = false;
     return false;
   }
 
+  // ── 3. Open SPIFFS file ─────────────────────────────────────────
   File file = SPIFFS.open("/capture.jpg", FILE_WRITE);
   if (!file) {
     Serial.println("Failed to open SPIFFS file for writing");
+    captureInProgress = false;
     return false;
   }
 
-  uint32_t received = 0;
-  timeout = millis();
+  // ── 4. Stream image data into SPIFFS ───────────────────────────
+  Serial2.setTimeout(1000);
+  uint8_t  buf[1024];
+  uint32_t received     = 0;
+  uint32_t lastProgress = 0;
 
   while (received < imgLen) {
-    if (Serial2.available()) {
-      file.write(Serial2.read());
-      received++;
-      timeout = millis();  // Reset timeout on every byte
-    }
+    size_t toRead    = min((uint32_t)sizeof(buf), imgLen - received);
+    size_t bytesRead = Serial2.readBytes(buf, toRead);
 
-    if (millis() - timeout > 10000) {
-      Serial.printf("Timeout at byte %u of %u\n", received, imgLen);
+    if (bytesRead == 0) {
+      Serial.printf("\nStall at %u / %u bytes\n", received, imgLen);
       file.close();
       SPIFFS.remove("/capture.jpg");
+      captureInProgress = false;
       return false;
     }
-  }
 
-  // Read end marker + checksum
-  while (Serial2.available() < 3) delay(10);
-  uint8_t end1 = Serial2.read();
-  uint8_t end2 = Serial2.read();
-  uint8_t checksum = Serial2.read();
+    file.write(buf, bytesRead);
+    received += bytesRead;
+
+    if (received - lastProgress >= 5120) {
+      Serial.printf("Progress: %u / %u bytes\n", received, imgLen);
+      lastProgress = received;
+    }
+  }
 
   file.close();
 
-  if (end1 != FRAME_END_1 || end2 != FRAME_END_2) {
-    Serial.println("End marker mismatch — corrupt frame");
+  // ── 5. Read end marker + checksum (3 bytes) ─────────────────────
+  Serial2.setTimeout(5000);
+  uint8_t trailer[3];
+  if (Serial2.readBytes(trailer, 3) < 3) {
+    Serial.println("Timeout waiting for trailer");
     SPIFFS.remove("/capture.jpg");
+    captureInProgress = false;
     return false;
   }
 
-  // Verify checksum by reading back from SPIFFS
-  File verify = SPIFFS.open("/capture.jpg", FILE_READ);
-  uint8_t calculated = 0;
-  while (verify.available()) {
-    calculated ^= verify.read();
+  if (trailer[0] != FRAME_END_1 || trailer[1] != FRAME_END_2) {
+    Serial.printf("End marker mismatch: 0x%02X 0x%02X\n", trailer[0], trailer[1]);
+    SPIFFS.remove("/capture.jpg");
+    captureInProgress = false;
+    return false;
   }
+
+  uint8_t checksum = trailer[2];
+
+  // ── 6. Verify checksum ──────────────────────────────────────────
+  File verify = SPIFFS.open("/capture.jpg", "r");
+  if (!verify || verify.size() != imgLen) {
+    Serial.printf("Verify failed — file size %u, expected %u\n",
+                  verify ? verify.size() : 0, imgLen);
+    if (verify) verify.close();
+    SPIFFS.remove("/capture.jpg");
+    captureInProgress = false;
+    return false;
+  }
+
+  uint8_t calculated = 0;
+  while (verify.available()) calculated ^= verify.read();
   verify.close();
 
   if (calculated != checksum) {
-    Serial.printf("Checksum mismatch — got 0x%02X expected 0x%02X\n", calculated, checksum);
+    Serial.printf("Checksum mismatch — got 0x%02X, expected 0x%02X\n",
+                  calculated, checksum);
     SPIFFS.remove("/capture.jpg");
+    captureInProgress = false;
     return false;
   }
 
-  Serial.printf("Image written to SPIFFS OK — %u bytes\n", imgLen);
+  Serial.printf("Image OK — %u bytes\n", imgLen);
   captureInProgress = false;
   return uploadImage(imgLen);
 }
+
 
 void activatePump() {
   if (!pumpActive) {
@@ -441,88 +461,88 @@ void checkPump(int moistureRoot, String wateringMode) {
 }
 
 void executePumpCommand(int duration, int commandId) {
-    Serial.printf("[CMD] Executing pump command — %d seconds\n", duration);
-    
-    // Activate pump
-    activatePump();
-    
-    // Block for duration (using smartDelay so reset button still works)
-    smartDelay(duration * 1000);
-    
-    // Deactivate pump
-    deactivatePump();
-    
-    Serial.println("[CMD] Pump command complete — acknowledging");
+  Serial.printf("[CMD] Executing pump command — %d seconds\n", duration);
 
-    // Acknowledge back to backend
-    if (WiFi.status() != WL_CONNECTED) return;
+  // Activate pump
+  activatePump();
 
-    String mac = WiFi.macAddress();
-    mac.replace(":", "");
+  // Block for duration (using smartDelay so reset button still works)
+  smartDelay(duration * 1000);
 
-    char endpoint[64];
-    snprintf(endpoint, sizeof(endpoint), COMMAND_ACK_ENDPOINT, mac.c_str());
+  // Deactivate pump
+  deactivatePump();
 
-    HTTPClient http;
-    String url = "http://" + getServerIP() + ":" + SERVER_PORT + endpoint;
-    http.begin(url);
-    http.addHeader("Content-Type", "application/json");
+  Serial.println("[CMD] Pump command complete — acknowledging");
 
-    StaticJsonDocument<64> doc;
-    doc["command_id"] = commandId;
-    doc["status"] = "executed";
+  // Acknowledge back to backend
+  if (WiFi.status() != WL_CONNECTED) return;
 
-    String payload;
-    serializeJson(doc, payload);
+  String mac = WiFi.macAddress();
+  mac.replace(":", "");
 
-    int httpCode = http.POST(payload);
-    Serial.printf("[CMD] Acknowledge response: %d\n", httpCode);
-    http.end();
+  char endpoint[64];
+  snprintf(endpoint, sizeof(endpoint), COMMAND_ACK_ENDPOINT, mac.c_str());
+
+  HTTPClient http;
+  String url = "http://" + getServerIP() + ":" + SERVER_PORT + endpoint;
+  http.begin(url);
+  http.addHeader("Content-Type", "application/json");
+
+  StaticJsonDocument<64> doc;
+  doc["command_id"] = commandId;
+  doc["status"] = "executed";
+
+  String payload;
+  serializeJson(doc, payload);
+
+  int httpCode = http.POST(payload);
+  Serial.printf("[CMD] Acknowledge response: %d\n", httpCode);
+  http.end();
 }
 
 void pollForCommands() {
-    if (WiFi.status() != WL_CONNECTED) return;
+  if (WiFi.status() != WL_CONNECTED) return;
 
-    String mac = WiFi.macAddress();
-    mac.replace(":", "");
+  String mac = WiFi.macAddress();
+  mac.replace(":", "");
 
-    char endpoint[64];
-    snprintf(endpoint, sizeof(endpoint), COMMAND_ENDPOINT, mac.c_str());
+  char endpoint[64];
+  snprintf(endpoint, sizeof(endpoint), COMMAND_ENDPOINT, mac.c_str());
 
-    HTTPClient http;
-    String url = "http://" + getServerIP() + ":" + SERVER_PORT + endpoint;
-    http.begin(url);
+  HTTPClient http;
+  String url = "http://" + getServerIP() + ":" + SERVER_PORT + endpoint;
+  http.begin(url);
 
-    int httpCode = http.GET();
+  int httpCode = http.GET();
 
-    if (httpCode == 200) {
-        String response = http.getString();
-        
-        // null response means no pending commands
-        if (response == "null") {
-            http.end();
-            return;
-        }
+  if (httpCode == 200) {
+    String response = http.getString();
 
-        StaticJsonDocument<128> doc;
-        DeserializationError error = deserializeJson(doc, response);
-        
-        if (!error) {
-            int commandId = doc["id"];
-            String commandType = doc["command_type"].as<String>();
-            int duration = doc["duration"];
-
-            Serial.printf("[CMD] Received command: %s (id=%d)\n", 
-                         commandType.c_str(), commandId);
-
-            if (commandType == "pump") {
-                executePumpCommand(duration, commandId);
-            }
-            // Future command types can be added here
-        }
+    // null response means no pending commands
+    if (response == "null") {
+      http.end();
+      return;
     }
 
-    http.end();
+    StaticJsonDocument<128> doc;
+    DeserializationError error = deserializeJson(doc, response);
+
+    if (!error) {
+      int commandId = doc["id"];
+      String commandType = doc["command_type"].as<String>();
+      int duration = doc["duration"];
+
+      Serial.printf("[CMD] Received command: %s (id=%d)\n",
+                    commandType.c_str(), commandId);
+
+      if (commandType == "pump") {
+        executePumpCommand(duration, commandId);
+      }
+      // Future command types can be added here
+    }
+  }
+
+  http.end();
 }
 
 #endif

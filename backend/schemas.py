@@ -76,6 +76,7 @@ class PlantUpdate(BaseModel):
 class PlantSummary(BaseModel):
     id: int
     name: str
+    mac_address: str
     species: Optional[str] = None
     latest_image_url: Optional[str] = None
     latest_moisture_pct: Optional[float] = None

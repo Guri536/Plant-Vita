@@ -1,8 +1,19 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { ArrowLeft, Droplet, Thermometer, Wind, Sun, Zap, Gauge as GaugeIcon, Activity, Camera } from "lucide-react";
+import {
+  ArrowLeft,
+  Droplet,
+  Thermometer,
+  Wind,
+  Sun,
+  Zap,
+  Gauge as GaugeIcon,
+  Activity,
+  Camera,
+} from "lucide-react";
 import { apiGet, apiPost } from "@/lib/api";
+import ReactMarkdown from "react-markdown";
 
 const css = `
   @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&family=DM+Sans:wght@300;400;500;600&display=swap');
@@ -76,6 +87,53 @@ const css = `
     to   { opacity:1; transform:translateY(0); }
   }
   .fade-up { animation: fadeUp 0.4s ease forwards; }
+  .markdown-content h1, .markdown-content h2, .markdown-content h3 {
+    font-family: 'Playfair Display', serif;
+    color: var(--mint);
+    margin-top: 16px;
+    margin-bottom: 8px;
+  }
+  .markdown-content p { margin-bottom: 12px; line-height: 1.6; }
+  .markdown-content ul { padding-left: 20px; margin-bottom: 12px; }
+  .markdown-content li { list-style-type: disc; margin-bottom: 4px; }
+
+  /* Collapsible Container */
+  .diagnosis-container {
+    position: relative;
+    overflow: hidden;
+    transition: max-height 0.5s cubic-bezier(0, 1, 0, 1); /* Smooth expansion */
+  }
+  .diagnosis-collapsed {
+    max-height: 150px; /* Adjust height for the 'preview' */
+  }
+  .diagnosis-expanded {
+    max-height: 2000px; /* Large enough to fit full text */
+    transition: max-height 0.5s ease-in-out;
+  }
+
+  /* The Gradient Fade */
+  .diagnosis-fade {
+    position: absolute;
+    bottom: 0; left: 0; right: 0;
+    height: 60px;
+    background: linear-gradient(to top, var(--canopy), transparent);
+    pointer-events: none;
+  }
+
+  .toggle-btn {
+    background: none;
+    border: none;
+    color: var(--mint);
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    padding: 8px 0;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    transition: color 0.2s;
+  }
+  .toggle-btn:hover { color: var(--cream); }
 `;
 
 /* ── Gauge component ──────────────────────────────────────────────────────── */
@@ -86,15 +144,34 @@ function Gauge({ value, max = 100, color = "#7fb896", size = 72 }) {
   const offset = circ * (1 - pct);
   return (
     <svg width={size} height={size} viewBox="0 0 64 64">
-      <circle className="gauge-track gauge-ring" cx="32" cy="32" r={r} strokeWidth="5" />
       <circle
-        className="gauge-fill gauge-ring" cx="32" cy="32" r={r} strokeWidth="5"
+        className="gauge-track gauge-ring"
+        cx="32"
+        cy="32"
+        r={r}
+        strokeWidth="5"
+      />
+      <circle
+        className="gauge-fill gauge-ring"
+        cx="32"
+        cy="32"
+        r={r}
+        strokeWidth="5"
         stroke={color}
         strokeDasharray={circ}
         strokeDashoffset={value != null ? offset : circ}
       />
-      <text x="32" y="36" textAnchor="middle"
-        style={{ fontSize: 13, fontWeight: 700, fill: "#f5f0e8", fontFamily: "'DM Sans', sans-serif" }}>
+      <text
+        x="32"
+        y="36"
+        textAnchor="middle"
+        style={{
+          fontSize: 13,
+          fontWeight: 700,
+          fill: "#f5f0e8",
+          fontFamily: "'DM Sans', sans-serif",
+        }}
+      >
         {value != null ? `${Math.round(value)}` : "—"}
       </text>
     </svg>
@@ -103,34 +180,57 @@ function Gauge({ value, max = 100, color = "#7fb896", size = 72 }) {
 
 /* ── Sensor card ──────────────────────────────────────────────────────────── */
 function SensorCard({ label, value, unit, icon, color, gaugeMax, type }) {
+  // Check for the classic "disconnected" sensor value
+  const isError = value === -127 || (type === "aqi" && value === 0);
+
   const getStatus = () => {
-    if (value == null) return null;
-    if (type === "moisture") return value < 30 ? "Low" : value < 60 ? "Good" : "High";
-    if (type === "temp")     return value < 10 ? "Low" : value <= 35 ? "Good" : "High";
-    if (type === "aqi")      return value > 200 ? "Poor" : value > 100 ? "Moderate" : "Good";
+    if (isError || value == null) return "Error"; //
+    if (type === "moisture")
+      return value < 30 ? "Low" : value < 60 ? "Good" : "High";
+    if (type === "temp")
+      return value < 10 ? "Low" : value <= 35 ? "Good" : "High";
     return "Good";
   };
+
   const status = getStatus();
-  const statusColor = status === "Good" ? "#4ade80" : status === "Low" || status === "Poor" ? "#f87171" : "#fbbf24";
+  const statusColor = status === "Good" ? "#4ade80" : "#f87171";
 
   return (
-    <div className="sensor-card">
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+    <div className="sensor-card" style={{ opacity: isError ? 0.7 : 1 }}>
+      <div style={{ display: "flex", justifyContent: "space-between" }}>
         <div>
-          <div style={{ fontSize: 11, color: "rgba(245,240,232,0.4)", fontWeight: 500, marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.08em" }}>
+          <div
+            style={{
+              fontSize: 11,
+              color: "rgba(245,240,232,0.4)",
+              marginBottom: 8,
+              textTransform: "uppercase",
+            }}
+          >
             {label}
           </div>
-          <div className="display" style={{ fontSize: 28, color: "#f5f0e8", lineHeight: 1 }}>
-            {value != null ? value.toFixed(1) : "—"}
-            <span style={{ fontSize: 14, fontFamily: "'DM Sans', sans-serif", fontWeight: 400, color: "rgba(245,240,232,0.4)", marginLeft: 3 }}>{unit}</span>
+          <div
+            className="display"
+            style={{ fontSize: 28, color: isError ? "#f87171" : "#f5f0e8" }}
+          >
+            {isError ? "ERR" : value != null ? value.toFixed(1) : "—"}
+            {!isError && (
+              <span style={{ fontSize: 14, color: "rgba(245,240,232,0.4)" }}>
+                {unit}
+              </span>
+            )}
           </div>
           {status && (
-            <div style={{ marginTop: 6, fontSize: 12, color: statusColor, fontWeight: 500 }}>
+            <div style={{ marginTop: 6, fontSize: 12, color: statusColor }}>
               ● {status}
             </div>
           )}
         </div>
-        <Gauge value={value} max={gaugeMax || 100} color={color} />
+        <Gauge
+          value={isError ? 0 : value}
+          max={gaugeMax || 100}
+          color={isError ? "#333" : color}
+        />
       </div>
     </div>
   );
@@ -141,59 +241,91 @@ export default function PlantDashboard({ plant, token, onBack }) {
   const [sensor, setSensor] = useState(null);
   const [diagnosis, setDiagnosis] = useState(null);
   const [cmdLoading, setCmdLoading] = useState(false);
+  const [isExpanded, setIsExpanded] = useState(false);
 
   const loadSensor = useCallback(async () => {
     try {
-      const readings = await apiGet(`/plants/${plant.id}/sensors?limit=1`, token);
+      const readings = await apiGet(
+        `/plants/${plant.id}/sensors?limit=1`,
+        token,
+      );
       if (Array.isArray(readings) && readings.length > 0)
         setSensor(readings[readings.length - 1]);
-    } catch (err) { console.error("Sensor load failed:", err); }
+    } catch (err) {
+      console.error("Sensor load failed:", err);
+    }
   }, [plant.id, token]);
 
   const loadDiagnosis = useCallback(async () => {
     try {
       setDiagnosis(await apiGet(`/plants/${plant.id}/diagnosis/`, token));
-    } catch { setDiagnosis(null); }
+    } catch {
+      setDiagnosis(null);
+    }
   }, [plant.id, token]);
 
   useEffect(() => {
-    loadSensor(); loadDiagnosis();
-    const iv = setInterval(() => { loadSensor(); loadDiagnosis(); }, 5000);
+    loadSensor();
+    loadDiagnosis();
+    const iv = setInterval(() => {
+      loadSensor();
+      loadDiagnosis();
+    }, 5000);
     return () => clearInterval(iv);
   }, [loadSensor, loadDiagnosis]);
 
   const handleWater = async () => {
     setCmdLoading(true);
     try {
-      await apiPost(`/plants/${plant.mac_address}/commands`, { command_type: "pump" }, token);
+      await apiPost(
+        `/plants/${plant.mac_address}/commands`,
+        { command_type: "pump" },
+        token,
+      );
       alert("💧 Pump command sent!");
-    } catch (err) { alert(`Failed: ${err.message}`); }
-    finally { setCmdLoading(false); }
+    } catch (err) {
+      alert(`Failed: ${err.message}`);
+    } finally {
+      setCmdLoading(false);
+    }
   };
 
   /* ── Health badge ─────────────────────────────────────────────────────── */
-  const healthText = diagnosis?.detected_health || plant.latest_health_status || "Pending";
-  const isCritical = plant.is_critical || healthText.toLowerCase().includes("critical");
-  const badge = isCritical ? { text: "Critical", cls: "badge-bad" }
-    : healthText.toLowerCase().includes("healthy") ? { text: "Healthy", cls: "badge-good" }
-    : healthText === "Pending" ? { text: "Pending", cls: "badge-warn" }
-    : { text: healthText, cls: "badge-warn" };
+  const healthText =
+    diagnosis?.detected_health || plant.latest_health_status || "Pending";
+  const isCritical =
+    plant.is_critical || healthText.toLowerCase().includes("critical");
+  const badge = isCritical
+    ? { text: "Critical", cls: "badge-bad" }
+    : healthText.toLowerCase().includes("healthy")
+      ? { text: "Healthy", cls: "badge-good" }
+      : healthText === "Pending"
+        ? { text: "Pending", cls: "badge-warn" }
+        : { text: healthText, cls: "badge-warn" };
 
   const pumpNeedsWater = sensor ? sensor.soil_root_pct < 30 : false;
-  const imageUrl = diagnosis?.image_url || plant.latest_image_url || "/plant.jpg";
+  const imageUrl =
+    diagnosis?.image_url || plant.latest_image_url || "/plant.jpg";
 
   return (
     <div className="dash">
       <style>{css}</style>
 
       {/* ── Top bar ──────────────────────────────────────────────────────── */}
-      <div style={{
-        display: "flex", alignItems: "center", justifyContent: "space-between",
-        padding: "18px 32px",
-        borderBottom: "1px solid rgba(255,255,255,0.06)",
-        background: "rgba(26,46,26,0.95)", backdropFilter: "blur(12px)",
-        position: "sticky", top: 0, zIndex: 40,
-      }}>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          padding: "18px 32px",
+          borderBottom: "1px solid rgba(255,255,255,0.06)",
+          background: "rgba(26,46,26,0.95)",
+          backdropFilter: "blur(12px)",
+          position: "sticky",
+          top: 0,
+          zIndex: 40,
+        }}
+      >
         <button className="back-btn" onClick={onBack}>
           <ArrowLeft size={14} /> Back to Plants
         </button>
@@ -207,40 +339,86 @@ export default function PlantDashboard({ plant, token, onBack }) {
         </div>
       </div>
 
-      <div style={{ maxWidth: 1100, margin: "0 auto", padding: "32px 32px 60px" }}>
-
+      <div
+        style={{ maxWidth: 1100, margin: "0 auto", padding: "32px 32px 60px" }}
+      >
         {/* ── Hero row ─────────────────────────────────────────────────── */}
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 340px", gap: 28, marginBottom: 28 }} className="fade-up">
-
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "1fr 340px",
+            gap: 28,
+            marginBottom: 28,
+          }}
+          className="fade-up"
+        >
           {/* LEFT — info + water control */}
-          <div style={{
-            background: "var(--canopy)",
-            border: "1px solid rgba(255,255,255,0.07)",
-            borderRadius: 20, padding: 28,
-          }}>
+          <div
+            style={{
+              background: "var(--canopy)",
+              border: "1px solid rgba(255,255,255,0.07)",
+              borderRadius: 20,
+              padding: 28,
+            }}
+          >
             <h2 className="display" style={{ fontSize: 34, marginBottom: 4 }}>
               🌱 {plant.name}
             </h2>
             {plant.species && (
-              <p style={{ fontSize: 14, color: "rgba(245,240,232,0.4)", fontStyle: "italic", marginBottom: 24 }}>
+              <p
+                style={{
+                  fontSize: 14,
+                  color: "rgba(245,240,232,0.4)",
+                  fontStyle: "italic",
+                  marginBottom: 24,
+                }}
+              >
                 {plant.species}
               </p>
             )}
 
             {/* Water status */}
-            <div style={{
-              display: "flex", alignItems: "center", justifyContent: "space-between",
-              background: pumpNeedsWater ? "rgba(239,68,68,0.08)" : "rgba(74,124,89,0.1)",
-              border: `1px solid ${pumpNeedsWater ? "rgba(239,68,68,0.2)" : "rgba(74,124,89,0.2)"}`,
-              borderRadius: 14, padding: "18px 22px", marginBottom: 24,
-            }}>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                background: pumpNeedsWater
+                  ? "rgba(239,68,68,0.08)"
+                  : "rgba(74,124,89,0.1)",
+                border: `1px solid ${pumpNeedsWater ? "rgba(239,68,68,0.2)" : "rgba(74,124,89,0.2)"}`,
+                borderRadius: 14,
+                padding: "18px 22px",
+                marginBottom: 24,
+              }}
+            >
               <div>
-                <div style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: "0.1em", color: "rgba(245,240,232,0.4)", marginBottom: 4 }}>Water Status</div>
-                <div className="display" style={{ fontSize: 26, color: pumpNeedsWater ? "#f87171" : "#4ade80" }}>
+                <div
+                  style={{
+                    fontSize: 11,
+                    textTransform: "uppercase",
+                    letterSpacing: "0.1em",
+                    color: "rgba(245,240,232,0.4)",
+                    marginBottom: 4,
+                  }}
+                >
+                  Water Status
+                </div>
+                <div
+                  className="display"
+                  style={{
+                    fontSize: 26,
+                    color: pumpNeedsWater ? "#f87171" : "#4ade80",
+                  }}
+                >
                   {sensor ? (pumpNeedsWater ? "Needs Water" : "Hydrated") : "—"}
                 </div>
               </div>
-              <button className="water-btn" onClick={handleWater} disabled={cmdLoading}>
+              <button
+                className="water-btn"
+                onClick={handleWater}
+                disabled={cmdLoading}
+              >
                 <Droplet size={15} />
                 {cmdLoading ? "Sending…" : "Water Now"}
               </button>
@@ -251,104 +429,329 @@ export default function PlantDashboard({ plant, token, onBack }) {
               <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
                 {[
                   ["Surface Moisture", sensor.soil_surface_pct, "%"],
-                  ["Root Moisture",    sensor.soil_root_pct, "%"],
-                  ["Soil Temp",        sensor.soil_temp_c, "°C"],
-                  ["Air Temp",         sensor.temp_c, "°C"],
-                  ["Humidity",         sensor.humidity_pct, "%"],
-                  ["Light",            sensor.light_lux, " lux"],
-                  ["Air Quality",      sensor.air_quality_pct, "%"],
-                  ["PPM",              sensor.air_ppm, ""],
+                  ["Root Moisture", sensor.soil_root_pct, "%"],
+                  ["Soil Temp", sensor.soil_temp_c, "°C"],
+                  ["Air Temp", sensor.temp_c, "°C"],
+                  ["Humidity", sensor.humidity_pct, "%"],
+                  ["Light", sensor.light_lux, " lux"],
+                  ["Air Quality", sensor.air_quality_pct, "%"],
+                  ["PPM", sensor.air_ppm, ""],
                 ].map(([label, val, unit]) => (
-                  <div key={label} style={{
-                    display: "flex", justifyContent: "space-between", alignItems: "center",
-                    padding: "10px 0",
-                    borderBottom: "1px solid rgba(255,255,255,0.05)",
-                  }}>
-                    <span style={{ fontSize: 13, color: "rgba(245,240,232,0.55)" }}>{label}</span>
-                    <span style={{ fontSize: 14, fontWeight: 600, color: "var(--cream)" }}>
-                      {val != null ? val.toFixed(1) : "—"}{unit}
+                  <div
+                    key={label}
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      padding: "10px 0",
+                      borderBottom: "1px solid rgba(255,255,255,0.05)",
+                    }}
+                  >
+                    <span
+                      style={{ fontSize: 13, color: "rgba(245,240,232,0.55)" }}
+                    >
+                      {label}
+                    </span>
+                    <span
+                      style={{
+                        fontSize: 14,
+                        fontWeight: 600,
+                        color: "var(--cream)",
+                      }}
+                    >
+                      {val != null ? val.toFixed(1) : "—"}
+                      {unit}
                     </span>
                   </div>
                 ))}
               </div>
             ) : (
               <div style={{ textAlign: "center", padding: "32px 0" }}>
-                <Activity size={28} color="rgba(245,240,232,0.2)" style={{ margin: "0 auto 10px" }} />
-                <p style={{ fontSize: 13, color: "rgba(245,240,232,0.3)" }} className="pulsing">
+                <Activity
+                  size={28}
+                  color="rgba(245,240,232,0.2)"
+                  style={{ margin: "0 auto 10px" }}
+                />
+                <p
+                  style={{ fontSize: 13, color: "rgba(245,240,232,0.3)" }}
+                  className="pulsing"
+                >
                   Waiting for sensor data…
                 </p>
               </div>
             )}
           </div>
 
-          {/* RIGHT — plant image */}
+          {/* RIGHT COLUMN — Image + Verdict */}
           <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-            <div style={{
-              borderRadius: 20, overflow: "hidden",
-              border: "1px solid rgba(255,255,255,0.07)",
-              background: "var(--canopy)", flex: 1,
-              position: "relative",
-            }}>
+            <div
+              style={{
+                borderRadius: 20,
+                overflow: "hidden",
+                border: "1px solid rgba(255,255,255,0.07)",
+                background: "var(--canopy)",
+                flex: "none",
+                position: "relative",
+              }}
+            >
               <img
                 src={imageUrl}
-                style={{ width: "100%", height: 280, objectFit: "cover", display: "block" }}
-                onError={(e) => { e.target.src = "/plant.jpg"; }}
+                style={{
+                  width: "100%",
+                  height: 320,
+                  objectFit: "cover",
+                  display: "block",
+                }}
+                onError={(e) => {
+                  e.target.src = "/plant.jpg";
+                }}
                 alt={plant.name}
               />
-              <div style={{
-                position: "absolute", bottom: 0, insetInline: 0,
-                background: "linear-gradient(to top, rgba(26,46,26,0.9), transparent)",
-                padding: "20px 16px 14px",
-              }}>
-                {diagnosis?.timestamp && (
-                  <div style={{ display: "flex", alignItems: "center", gap: 6, color: "rgba(245,240,232,0.5)", fontSize: 11 }}>
-                    <Camera size={12} />
-                    {new Date(diagnosis.timestamp).toLocaleString()}
-                  </div>
-                )}
+
+              {/* Verdict Overlay / Section */}
+              <div
+                style={{
+                  padding: "20px",
+                  background:
+                    "linear-gradient(to bottom, rgba(45,74,45,0.8), var(--canopy))",
+                  borderTop: "1px solid rgba(255,255,255,0.05)",
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: 10,
+                    textTransform: "uppercase",
+                    letterSpacing: "0.1em",
+                    color: "rgba(245,240,232,0.4)",
+                    marginBottom: 8,
+                  }}
+                >
+                  AI Visual Verdict
+                </div>
+
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                  }}
+                >
+                  <span
+                    className={`health-pill ${badge.cls}`}
+                    style={{ fontSize: 16, padding: "6px 16px" }}
+                  >
+                    {diagnosis?.detected_health || "Analyzing..."}
+                  </span>
+
+                  {diagnosis?.health_confidence != null && (
+                    <div style={{ textAlign: "right" }}>
+                      <div
+                        style={{
+                          fontSize: 18,
+                          fontWeight: 700,
+                          color: "var(--cream)",
+                        }}
+                      >
+                        {(diagnosis.health_confidence * 100).toFixed(0)}%
+                      </div>
+                      <div
+                        style={{ fontSize: 9, color: "rgba(245,240,232,0.3)" }}
+                      >
+                        CONFIDENCE
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Timestamp Footer */}
+              <div
+                style={{
+                  background: "rgba(0,0,0,0.2)",
+                  padding: "10px 20px",
+                  fontSize: 11,
+                  color: "rgba(245,240,232,0.4)",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6,
+                }}
+              >
+                <Camera size={12} />
+                {diagnosis?.timestamp
+                  ? new Date(diagnosis.timestamp).toLocaleString()
+                  : "No scans yet"}
               </div>
             </div>
 
-            {/* Mac address chip */}
-            <div style={{
-              background: "var(--canopy)",
-              border: "1px solid rgba(255,255,255,0.07)",
-              borderRadius: 12, padding: "12px 16px",
-            }}>
-              <div style={{ fontSize: 10, textTransform: "uppercase", letterSpacing: "0.1em", color: "rgba(245,240,232,0.3)", marginBottom: 4 }}>Device MAC</div>
-              <div style={{ fontSize: 13, fontFamily: "monospace", color: "var(--mint)" }}>{plant.mac_address || "—"}</div>
+            {/* Device MAC (Keep it small and tucked away) */}
+            <div
+              style={{
+                background: "rgba(255,255,255,0.03)",
+                border: "1px solid rgba(255,255,255,0.05)",
+                borderRadius: 12,
+                padding: "10px 16px",
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+              }}
+            >
+              <span style={{ fontSize: 10, color: "rgba(245,240,232,0.3)" }}>
+                HARDWARE ID
+              </span>
+              <span
+                style={{
+                  fontSize: 12,
+                  fontFamily: "monospace",
+                  color: "var(--mint)",
+                }}
+              >
+                {plant.mac_address}
+              </span>
             </div>
           </div>
         </div>
 
         {/* ── Sensor Grid ──────────────────────────────────────────────── */}
         {sensor && (
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16, marginBottom: 28 }}>
-            <SensorCard label="Surface Moisture" value={sensor.soil_surface_pct} unit="%" icon={Droplet}   color="#60a5fa" type="moisture" />
-            <SensorCard label="Root Moisture"    value={sensor.soil_root_pct}     unit="%" icon={Droplet}   color="#3b82f6" type="moisture" />
-            <SensorCard label="Soil Temp"        value={sensor.soil_temp_c}        unit="°C" icon={Thermometer} color="#fb923c" gaugeMax={50} type="temp" />
-            <SensorCard label="Air Temp"         value={sensor.temp_c}             unit="°C" icon={Thermometer} color="#f97316" gaugeMax={50} type="temp" />
-            <SensorCard label="Humidity"         value={sensor.humidity_pct}       unit="%" icon={Wind}     color="#2dd4bf" />
-            <SensorCard label="Light"            value={sensor.light_lux}          unit=" lux" icon={Sun}   color="#fbbf24" gaugeMax={2000} />
-            <SensorCard label="Air Quality"      value={sensor.air_quality_pct}    unit="%" icon={GaugeIcon}   color="#a78bfa" type="aqi" />
-            <SensorCard label="PPM"              value={sensor.air_ppm}            unit="" icon={Zap}      color="#34d399" gaugeMax={500} />
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(4, 1fr)",
+              gap: 16,
+              marginBottom: 28,
+            }}
+          >
+            <SensorCard
+              label="Surface Moisture"
+              value={sensor.soil_surface_pct}
+              unit="%"
+              icon={Droplet}
+              color="#60a5fa"
+              type="moisture"
+            />
+            <SensorCard
+              label="Root Moisture"
+              value={sensor.soil_root_pct}
+              unit="%"
+              icon={Droplet}
+              color="#3b82f6"
+              type="moisture"
+            />
+            <SensorCard
+              label="Soil Temp"
+              value={sensor.soil_temp_c}
+              unit="°C"
+              icon={Thermometer}
+              color="#fb923c"
+              gaugeMax={50}
+              type="temp"
+            />
+            <SensorCard
+              label="Air Temp"
+              value={sensor.temp_c}
+              unit="°C"
+              icon={Thermometer}
+              color="#f97316"
+              gaugeMax={50}
+              type="temp"
+            />
+            <SensorCard
+              label="Humidity"
+              value={sensor.humidity_pct}
+              unit="%"
+              icon={Wind}
+              color="#2dd4bf"
+            />
+            <SensorCard
+              label="Light"
+              value={sensor.light_lux}
+              unit=" lux"
+              icon={Sun}
+              color="#fbbf24"
+              gaugeMax={2000}
+            />
+            <SensorCard
+              label="Air Quality"
+              value={sensor.air_quality_pct}
+              unit="%"
+              icon={GaugeIcon}
+              color="#a78bfa"
+              type="aqi"
+            />
+            <SensorCard
+              label="PPM"
+              value={sensor.air_ppm}
+              unit=""
+              icon={Zap}
+              color="#34d399"
+              gaugeMax={500}
+            />
           </div>
         )}
 
         {/* ── AI Diagnosis ─────────────────────────────────────────────── */}
+        {/* ── AI Diagnosis ─────────────────────────────────────────────── */}
         {diagnosis?.ai_diagnosis && (
-          <div style={{
-            background: "var(--canopy)",
-            border: "1px solid rgba(255,255,255,0.07)",
-            borderRadius: 20, padding: 28,
-          }}>
-            <h3 className="display" style={{ fontSize: 22, marginBottom: 16 }}>🤖 AI Diagnosis</h3>
-            <p style={{ fontSize: 14, color: "rgba(245,240,232,0.75)", lineHeight: 1.8, whiteSpace: "pre-wrap" }}>
-              {diagnosis.ai_diagnosis}
-            </p>
+          <div
+            style={{
+              background: "var(--canopy)",
+              border: "1px solid rgba(255,255,255,0.07)",
+              borderRadius: 20,
+              padding: 28,
+              marginTop: 28,
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                marginBottom: 16,
+              }}
+            >
+              <h3 className="display" style={{ fontSize: 22, margin: 0 }}>
+                🤖 AI Diagnosis
+              </h3>
+              {diagnosis.health_confidence && (
+                <span style={{ fontSize: 12, color: "rgba(245,240,232,0.4)" }}>
+                  Analysis Confidence:{" "}
+                  {(diagnosis.health_confidence * 100).toFixed(0)}%
+                </span>
+              )}
+            </div>
+
+            <div
+              className={`diagnosis-container ${isExpanded ? "diagnosis-expanded" : "diagnosis-collapsed"}`}
+            >
+              <div
+                className="markdown-content"
+                style={{ fontSize: 14, color: "rgba(245,240,232,0.8)" }}
+              >
+                <ReactMarkdown>{diagnosis.ai_diagnosis}</ReactMarkdown>
+              </div>
+
+              {/* Show fade only when collapsed */}
+              {!isExpanded && <div className="diagnosis-fade" />}
+            </div>
+
+            <button
+              className="toggle-btn"
+              onClick={() => setIsExpanded(!isExpanded)}
+            >
+              {isExpanded ? "↑ Show Less" : "↓ Read Full Diagnosis"}
+            </button>
+
             {diagnosis.vision_error && (
-              <p style={{ fontSize: 12, color: "#f87171", marginTop: 12 }}>
-                Vision error: {diagnosis.vision_error}
+              <p
+                style={{
+                  fontSize: 12,
+                  color: "#f87171",
+                  marginTop: 12,
+                  borderTop: "1px solid rgba(248,113,113,0.2)",
+                  paddingTop: 12,
+                }}
+              >
+                ⚠️ Vision Analysis Note: {diagnosis.vision_error}
               </p>
             )}
           </div>
